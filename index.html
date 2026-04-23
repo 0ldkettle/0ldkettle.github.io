@@ -549,12 +549,12 @@ const TEMPO_FAST_MS  = 110;   // <= this: maximum gain (frantic tapping only)
 const TEMPO_MID_MS   = 180;
 const TEMPO_SLOW_MS  = 320;   // > this: zero gain
 // Rebalanced: previous gains were smaller than the per-tap decay even at
-// max tap speed (0.0075 gain vs 0.018 decay over 100ms), so tempo could
-// literally never grow. New values let a sustained ~8-9 taps/sec fill the
-// bar in ~3-4 seconds, while slower tapping still drains.
-const TEMPO_GAIN_FAST = 0.040;
-const TEMPO_GAIN_MID  = 0.015;
-const TEMPO_GAIN_SLOW = 0.003;
+// max tap speed, so tempo could literally never grow. Tuned so that
+// sustained ~8-9 taps/sec fills the bar in ~5-6 seconds, while slower
+// tapping still drains.
+const TEMPO_GAIN_FAST = 0.024;
+const TEMPO_GAIN_MID  = 0.010;
+const TEMPO_GAIN_SLOW = 0.002;
 // Tempo lost per second of idleness. 0.18 = full bar drains in ~5.5s.
 const TEMPO_DECAY_PER_SEC = 0.18;
 const SADNESS_DELAY_MS = 5000;
