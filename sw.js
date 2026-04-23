@@ -1,7 +1,7 @@
 // Service Worker for Goose Clicker PWA.
 // Minimal cache-first strategy so the app works offline and passes the
 // Chrome installability check ("installed service worker that controls page").
-const CACHE = 'goose-clicker-v13';
+const CACHE = 'goose-clicker-v14';
 const ASSETS = [
   './',
   './index.html',

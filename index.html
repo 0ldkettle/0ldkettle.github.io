@@ -264,8 +264,29 @@
     pointer-events: auto;
   }
   #styleBtn:active { transform: scale(0.93); }
+
+  /* Mute toggle button (sound on/off) */
+  #muteBtn {
+    position: absolute;
+    bottom: max(12px, env(safe-area-inset-bottom));
+    right: 104px;
+    z-index: 11;
+    background: rgba(10,6,30,.85);
+    border: 1.5px solid rgba(255,255,255,.22);
+    border-radius: 10px;
+    color: #fff;
+    font-size: 14px;
+    font-weight: 800;
+    padding: 3px 9px;
+    cursor: pointer;
+    transition: background .15s, transform .1s;
+    pointer-events: auto;
+    line-height: 1.4;
+  }
+  #muteBtn:active { transform: scale(0.93); }
+
   @media (hover: hover) and (pointer: fine) {
-    #langBtn, #styleBtn {
+    #langBtn, #styleBtn, #muteBtn {
       background: rgba(10,6,30,.65);
       backdrop-filter: blur(6px);
       -webkit-backdrop-filter: blur(6px);
@@ -295,6 +316,7 @@
   <div id="motivation"></div>
   <button id="langBtn">EN</button>
   <button id="styleBtn">SVG</button>
+  <button id="muteBtn" aria-label="Toggle sound" title="Toggle sound">🔊</button>
   <div id="credits" role="dialog" aria-modal="true">
     <div class="dialog">
       <h3 id="creditsTitle">About</h3>
@@ -562,6 +584,9 @@ if (currentLang !== 'ru') currentLang = 'en';
   state.gooseStyle = (gs === '0') ? 0 : 1;
 }
 
+// Restore mute preference (default: sound on)
+state.muted = Store.get('muted') === '1';
+
 // Restore game score and explosion count
 {
   const s = parseInt(Store.get('goose_score') || '0', 10);
@@ -660,6 +685,7 @@ const AudioPool = (() => {
 
   return {
     play() {
+      if (state.muted) return;
       const a = pool[idx];
       idx = (idx + 1) % POOL_SIZE;
       try {
@@ -1868,6 +1894,20 @@ styleBtn.addEventListener('click', () => {
   applyGooseStyle(state.gooseStyle === 1 ? 0 : 1);
 });
 applyGooseStyle(state.gooseStyle);
+
+// =============================================================
+// Mute toggle button — persists via Store.
+// =============================================================
+const muteBtn = document.getElementById('muteBtn');
+function applyMuted(muted) {
+  state.muted = !!muted;
+  Store.set('muted', state.muted ? '1' : '0');
+  muteBtn.textContent = state.muted ? '🔇' : '🔊';
+}
+muteBtn.addEventListener('click', () => {
+  applyMuted(!state.muted);
+});
+applyMuted(state.muted);
 
 // =============================================================
 // Sadness timer — goose looks sad when ignored
