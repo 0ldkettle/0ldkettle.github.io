@@ -31,17 +31,23 @@
     --ink: #fff;
   }
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-  html, body {
-    /* Pin the document itself to the viewport. `position:fixed; inset:0`
-       lets the browser own the exact viewport rect — no more fighting
-       with vh/dvh/innerHeight-based `height` which drifts on iOS PWA
-       and leaves a permanent black strip at the bottom. */
-    position: fixed;
-    inset: 0;
+  /* html fills the FULL physical screen (including the home-indicator area
+     on iPhone PWAs). We paint the same gradient on html itself so that
+     the iOS safe-area strip under the stage blends in instead of showing
+     black bars. */
+  html {
     margin: 0; padding: 0;
-    /* Solid dark-purple so any safe-area around the stage tints with the
-       game palette instead of pure black. */
-    background: #080217;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(180deg, #3a1685 0%, #1a0a3c 55%, #080217 100%);
+    background-attachment: fixed;
+    overflow: hidden;
+  }
+  body {
+    margin: 0; padding: 0;
+    width: 100%;
+    height: 100%;
+    background: transparent;
     overscroll-behavior: none;
     user-select: none;
     -webkit-user-select: none;
@@ -52,12 +58,13 @@
     touch-action: none;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, Arial, sans-serif;
     color: var(--ink);
+    overflow: hidden;
   }
-  html { height: 100%; }
   #stage {
-    /* inset-based sizing only — no explicit height that can drift. */
+    /* Fill the full viewport. html already carries the gradient so the
+       safe-area strip under the stage stays on-palette. */
     position: fixed;
-    top: 0; bottom: 0;
+    inset: 0;
     left: 50%;
     transform: translateX(-50%);
     width: 100%;
@@ -315,8 +322,6 @@
   <div class="hud hud-top">
     <div id="score" class="chip">Score: 0</div>
     <div id="explodeCount" class="chip">Explosions: 0</div>
-    <!-- TEMP viewport diagnostic -->
-    <div id="vpDbg" class="chip" style="color:#2EE6FF;font-size:10px;line-height:1.35;text-align:left;white-space:pre;">vp</div>
   </div>
   <div id="motivation"></div>
   <span id="buildHash" aria-label="Build commit"></span>
@@ -343,23 +348,10 @@
 // 100vh/100dvh can under-report on iOS Safari standalone, leaving a black
 // strip at the bottom. window.innerHeight is the reliable source.
 // =============================================================
-// Old --app-height JS sizing was removed. html/body/#stage now use
-// `position:fixed; inset:0` which lets the browser own the viewport rect
-// directly — no drift, no black strip. The TEMP diagnostic below shows
-// the real stage size vs viewport metrics.
-setInterval(() => {
-  const el = document.getElementById('vpDbg');
-  if (!el) return;
-  const vvh = window.visualViewport ? Math.round(window.visualViewport.height) : '-';
-  const stageEl = document.getElementById('stage');
-  const sh = stageEl ? Math.round(stageEl.getBoundingClientRect().height) : '-';
-  el.textContent =
-    'inner: ' + window.innerHeight +
-    '\nvv h: ' + vvh +
-    '\nstage: ' + sh +
-    '\ndocEl: ' + document.documentElement.clientHeight +
-    '\nscreen: ' + screen.height;
-}, 200);
+// html/body/#stage use `position:fixed; inset:0` and html carries the
+// same gradient as the stage — so the iOS PWA safe-area strip under the
+// stage (the home-indicator region) stays on palette instead of showing
+// a black bar. No JS viewport sizing needed anymore.
 
 // =============================================================
 // Internationalization (i18n) — EN is the default language
