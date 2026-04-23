@@ -33,8 +33,16 @@
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
   html, body {
     margin: 0; padding: 0;
-    width: 100%; height: 100%;
-    background: #000;
+    width: 100%;
+    /* iOS PWA fill fix: use dynamic viewport height so the page extends
+       to the very bottom of the screen under the home indicator, with
+       graceful fallbacks for older WebKit. */
+    height: 100vh;
+    height: -webkit-fill-available;
+    height: 100dvh;
+    /* Full-screen gradient so nothing behind #stage ever shows as black. */
+    background: #080217 linear-gradient(180deg, #3a1685 0%, #1a0a3c 55%, #080217 100%) no-repeat;
+    background-attachment: fixed;
     overscroll-behavior: none;
     user-select: none;
     -webkit-user-select: none;
@@ -49,7 +57,11 @@
     transform: translateX(-50%);
     width: 100%;
     max-width: 560px;
-    height: 100%;
+    /* Match the body height strategy so #stage fills the full viewport
+       including the iOS home indicator / dynamic-island safe areas. */
+    height: 100vh;
+    height: -webkit-fill-available;
+    height: 100dvh;
     overflow: hidden;
     background: linear-gradient(180deg, #3a1685 0%, #1a0a3c 55%, #080217 100%);
   }
