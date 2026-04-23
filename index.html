@@ -585,8 +585,17 @@ let W = 0, H = 0, DPR = 1;
 // Coarse pointer = phones/tablets. iOS Safari hits a fill-rate wall when rendering
 // hundreds of particles at 3x DPR, so we cap DPR lower and halve particle counts.
 const IS_TOUCH_DEVICE = matchMedia('(hover: none) and (pointer: coarse)').matches;
-const FX_SCALE = IS_TOUCH_DEVICE ? 0.5 : 1;     // particle-count multiplier
-const DPR_CAP  = IS_TOUCH_DEVICE ? 2 : 2.5;
+// Safari (including desktop Mac) has a significantly weaker Canvas 2D pipeline
+// than Chromium. Detect it and apply the same lite-fx budget as mobile.
+const IS_SAFARI = /^((?!chrome|android|crios|fxios|edgios).)*safari/i.test(navigator.userAgent);
+const LITE_FX = IS_TOUCH_DEVICE || IS_SAFARI;
+const FX_SCALE = LITE_FX ? 0.5 : 1;             // particle-count multiplier
+const DPR_CAP  = LITE_FX ? 2 : 2.5;
+// Hard caps on simultaneous particles — prevents accumulation at high tap rates.
+const MAX_SPARKS   = LITE_FX ? 120 : 240;
+const MAX_FEATHERS = LITE_FX ?  60 : 120;
+const MAX_RIPPLES  = LITE_FX ?  16 :  28;
+const MAX_FLY_PLUS = LITE_FX ?   6 :  10;
 
 function resize() {
   DPR = Math.min(window.devicePixelRatio || 1, DPR_CAP);
@@ -1375,6 +1384,11 @@ function pulseEl(el, scale = 1.18, dur = 260) {
 const stage = document.getElementById('stage');
 
 function flyPointToScore(startX, startY) {
+  // Skip the DOM fly animation when too many are already in flight — awards the point directly.
+  if (document.querySelectorAll('.fly-plus').length >= MAX_FLY_PLUS) {
+    onPointArrived();
+    return;
+  }
   const plus = document.createElement('div');
   plus.className = 'fly-plus';
   plus.innerHTML = `<svg viewBox="0 0 34 34" width="34" height="34" xmlns="http://www.w3.org/2000/svg">
@@ -1406,9 +1420,9 @@ function flyPointToScore(startX, startY) {
     const scale = 0.4 + 1.1 * eased - 0.45 * eased * eased;
     plus.style.transform = `translate(${bx}px,${by}px) scale(${scale}) rotate(${spin * eased}deg)`;
     plus.style.opacity   = Math.min(1, t * 5);
-    // Trailing sparks only on desktop — on mobile they compound with the
-    // burst at the end and tank the frame rate.
-    if (!IS_TOUCH_DEVICE && eased - lastSparkT > 0.05) {
+    // Trailing sparks only on non-lite devices — they compound heavily
+    // on Safari (desktop + iOS) and mobile, tanking the frame rate.
+    if (!LITE_FX && eased - lastSparkT > 0.05) {
       spawnSpark(bx + 17, by + 17);
       lastSparkT = eased;
     }
@@ -1453,7 +1467,7 @@ function flyBonusCube(startX, startY, value) {
     const scale = 0.4 + 1.1 * eased - 0.45 * eased * eased;
     plus.style.transform = `translate(${bx}px,${by}px) scale(${scale}) rotate(${spin * eased}deg)`;
     plus.style.opacity   = Math.min(1, t * 5);
-    if (!IS_TOUCH_DEVICE && eased - lastSparkT > 0.05) {
+    if (!LITE_FX && eased - lastSparkT > 0.05) {
       spawnSpark(bx + 20, by + 20);
       lastSparkT = eased;
     }
@@ -1895,6 +1909,10 @@ function frame(now) {
     ripples[i].t += dt;
     if (ripples[i].t > ripples[i].life) ripples.splice(i, 1);
   }
+  // Trim oldest when exceeding hard caps (prevents frame-rate collapse on Safari).
+  if (sparks.length   > MAX_SPARKS)   sparks.splice(0,   sparks.length   - MAX_SPARKS);
+  if (feathers.length > MAX_FEATHERS) feathers.splice(0, feathers.length - MAX_FEATHERS);
+  if (ripples.length  > MAX_RIPPLES)  ripples.splice(0,  ripples.length  - MAX_RIPPLES);
 
   // Draw sparks beneath the goose
   for (const s of sparks) {
