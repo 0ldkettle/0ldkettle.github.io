@@ -220,14 +220,23 @@
     cursor: pointer;
   }
 
-  /* Language toggle button */
-  /* Unified style for HUD control buttons in the bottom-right corner */
-  #langBtn, #styleBtn, #muteBtn {
+  /* Vertical stack of HUD control buttons, anchored top-right. */
+  #controls {
     position: absolute;
-    bottom: max(12px, env(safe-area-inset-bottom));
+    top: max(10px, env(safe-area-inset-top));
+    right: 10px;
     z-index: 11;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 6px;
+    pointer-events: none;
+  }
+  #langBtn, #styleBtn, #muteBtn {
+    position: relative;
     box-sizing: border-box;
-    height: 26px;
+    width: 44px;
+    height: 30px;
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -237,16 +246,15 @@
     color: #fff;
     font-size: 12px;
     font-weight: 800;
-    padding: 0 9px;
+    padding: 0;
     cursor: pointer;
     letter-spacing: 0.5px;
     line-height: 1;
     transition: background .15s, transform .1s;
     pointer-events: auto;
+    -webkit-touch-callout: none;
   }
-  #langBtn  { right: 12px;  }
-  #styleBtn { right: 58px;  }
-  #muteBtn  { right: 104px; font-size: 14px; padding: 0 7px; }
+  #muteBtn { font-size: 15px; }
 
   /* Build hash — small, low-contrast, unobtrusive in the bottom-left */
   #buildHash {
