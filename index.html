@@ -656,6 +656,11 @@ function resize() {
 }
 window.addEventListener('resize', resize);
 window.addEventListener('orientationchange', () => setTimeout(resize, 200));
+// ResizeObserver catches --app-height changes on the stage that don't fire
+// a window resize event (common on iOS PWA after JS sets --app-height).
+if (window.ResizeObserver) {
+  new ResizeObserver(() => resize()).observe(document.getElementById('stage'));
+}
 resize();
 
 // =============================================================
