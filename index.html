@@ -68,14 +68,19 @@
     overflow: hidden;
   }
   #stage {
-    /* Fill the full viewport. html already carries the gradient so the
-       safe-area strip under the stage stays on-palette. */
+    /* Extend the stage PAST the iOS home-indicator safe-area so the
+       gradient (and the spike decoration painted on the canvas near the
+       bottom of the stage) reach the true physical edge of the screen.
+       Without this, iOS PWA clips the stage at innerHeight (above the
+       home-indicator) and the ~68px strip below shows html's solid
+       color, which looks like a dark band under the spikes. */
     position: fixed;
-    inset: 0;
+    top: 0;
     left: 50%;
     transform: translateX(-50%);
     width: 100%;
     max-width: 560px;
+    height: calc(100% + env(safe-area-inset-bottom));
     overflow: hidden;
     background: linear-gradient(180deg, #3a1685 0%, #1a0a3c 55%, #080217 100%);
   }
@@ -324,6 +329,8 @@
 </style>
 </head>
 <body>
+<!-- Probe element for reading env(safe-area-inset-bottom) from JS. -->
+<div id="safeProbe" style="position:fixed;left:0;bottom:0;width:0;height:0;padding-bottom:env(safe-area-inset-bottom);pointer-events:none;visibility:hidden;"></div>
 <div id="stage">
   <canvas id="cv"></canvas>
   <div class="hud hud-top">
@@ -666,12 +673,25 @@ const MAX_FEATHERS = LITE_FX ?  60 : 120;
 const MAX_RIPPLES  = LITE_FX ?  16 :  28;
 const MAX_FLY_PLUS = LITE_FX ?   6 :  10;
 
+// Safe-area inset at the bottom (iOS home-indicator). The stage extends
+// BELOW the safe-area so the gradient reaches the physical screen edge
+// and no dark strip appears. Everything that should sit on the "logical"
+// bottom edge (spikes, ground line) must render at H - SAFE_BOTTOM.
+let SAFE_BOTTOM = 0;
+function readSafeBottom() {
+  // Read a tiny probe element that uses env(safe-area-inset-bottom).
+  const probe = document.getElementById('safeProbe');
+  if (!probe) return 0;
+  const v = parseFloat(getComputedStyle(probe).paddingBottom) || 0;
+  return Math.round(v);
+}
 function resize() {
   DPR = Math.min(window.devicePixelRatio || 1, DPR_CAP);
   const stage = document.getElementById('stage');
   const r = stage.getBoundingClientRect();
   W = Math.round(r.width);
   H = Math.round(r.height);
+  SAFE_BOTTOM = readSafeBottom();
   cv.width  = Math.round(W * DPR);
   cv.height = Math.round(H * DPR);
   cv.style.width  = W + 'px';
@@ -1012,11 +1032,13 @@ function drawBackground(dt) {
   ctx.fillStyle = grad;
   ctx.fillRect(0, groundTop - 80, W, 80);
 
-  // Cyan baseline along the very bottom
+  // Cyan baseline along the LOGICAL bottom (above iOS home-indicator).
+  const logicalBottom = H - SAFE_BOTTOM;
   ctx.fillStyle = '#00E5FF';
-  ctx.fillRect(0, groundTop - 2, W, 2);
+  ctx.fillRect(0, logicalBottom - 2, W, 2);
 
-  // Scrolling pink spikes sitting on the bottom edge
+  // Scrolling pink spikes sitting on the LOGICAL bottom edge (above
+  // the iOS home-indicator safe-area).
   const baseW = 34, hSpike = 26, spacing = 46;
   const offset = -((state.bgScroll * 0.55) % spacing);
   ctx.fillStyle   = '#FF3E7F';
@@ -1024,9 +1046,9 @@ function drawBackground(dt) {
   ctx.lineWidth   = 1.5;
   for (let x = offset - spacing; x < W + spacing; x += spacing) {
     ctx.beginPath();
-    ctx.moveTo(x - baseW / 2, groundTop);
-    ctx.lineTo(x + baseW / 2, groundTop);
-    ctx.lineTo(x, groundTop - hSpike);
+    ctx.moveTo(x - baseW / 2, logicalBottom);
+    ctx.lineTo(x + baseW / 2, logicalBottom);
+    ctx.lineTo(x, logicalBottom - hSpike);
     ctx.closePath();
     ctx.fill();
     ctx.stroke();
