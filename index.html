@@ -226,64 +226,33 @@
   }
 
   /* Language toggle button */
-  #langBtn {
+  /* Unified style for HUD control buttons in the bottom-right corner */
+  #langBtn, #styleBtn, #muteBtn {
     position: absolute;
     bottom: max(12px, env(safe-area-inset-bottom));
-    right: 12px;
     z-index: 11;
+    box-sizing: border-box;
+    height: 26px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     background: rgba(10,6,30,.85);
     border: 1.5px solid rgba(255,255,255,.22);
     border-radius: 10px;
     color: #fff;
     font-size: 12px;
     font-weight: 800;
-    padding: 5px 9px;
+    padding: 0 9px;
     cursor: pointer;
     letter-spacing: 0.5px;
+    line-height: 1;
     transition: background .15s, transform .1s;
     pointer-events: auto;
   }
-  #langBtn:active { transform: scale(0.93); }
-
-  /* Goose style toggle button (SVG ↔ PNG) */
-  #styleBtn {
-    position: absolute;
-    bottom: max(12px, env(safe-area-inset-bottom));
-    right: 58px;
-    z-index: 11;
-    background: rgba(10,6,30,.85);
-    border: 1.5px solid rgba(255,255,255,.22);
-    border-radius: 10px;
-    color: #fff;
-    font-size: 12px;
-    font-weight: 800;
-    padding: 5px 9px;
-    cursor: pointer;
-    letter-spacing: 0.5px;
-    transition: background .15s, transform .1s;
-    pointer-events: auto;
-  }
-  #styleBtn:active { transform: scale(0.93); }
-
-  /* Mute toggle button (sound on/off) */
-  #muteBtn {
-    position: absolute;
-    bottom: max(12px, env(safe-area-inset-bottom));
-    right: 104px;
-    z-index: 11;
-    background: rgba(10,6,30,.85);
-    border: 1.5px solid rgba(255,255,255,.22);
-    border-radius: 10px;
-    color: #fff;
-    font-size: 14px;
-    font-weight: 800;
-    padding: 3px 9px;
-    cursor: pointer;
-    transition: background .15s, transform .1s;
-    pointer-events: auto;
-    line-height: 1.4;
-  }
-  #muteBtn:active { transform: scale(0.93); }
+  #langBtn  { right: 12px;  }
+  #styleBtn { right: 58px;  }
+  #muteBtn  { right: 104px; font-size: 14px; padding: 0 7px; }
+  #langBtn:active, #styleBtn:active, #muteBtn:active { transform: scale(0.93); }
 
   @media (hover: hover) and (pointer: fine) {
     #langBtn, #styleBtn, #muteBtn {
