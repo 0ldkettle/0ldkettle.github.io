@@ -263,11 +263,9 @@
     font-family: ui-monospace, Menlo, Consolas, monospace;
     font-size: 10px;
     letter-spacing: 0.5px;
-    text-decoration: none;
-    pointer-events: auto;
+    pointer-events: none;
     user-select: none;
   }
-  #buildHash:hover { color: rgba(255,255,255,.45); }
   #langBtn:active, #styleBtn:active, #muteBtn:active { transform: scale(0.93); }
 
   @media (hover: hover) and (pointer: fine) {
@@ -299,7 +297,7 @@
     <div id="explodeCount" class="chip">Explosions: 0</div>
   </div>
   <div id="motivation"></div>
-  <a id="buildHash" href="#" target="_blank" rel="noopener" aria-label="Build commit"></a>
+  <span id="buildHash" aria-label="Build commit"></span>
   <button id="langBtn">EN</button>
   <button id="styleBtn">SVG</button>
   <button id="muteBtn" aria-label="Toggle sound" title="Toggle sound">🔊</button>
@@ -2072,9 +2070,7 @@ if ('serviceWorker' in navigator) {
     .then(r => r.ok ? r.text() : '')
     .then(txt => {
       const hash = (txt || '').trim().slice(0, 7);
-      if (!hash) return;
-      el.textContent = hash;
-      el.href = 'https://github.com/0ldkettle/0ldkettle.github.io/commit/' + hash;
+      if (hash) el.textContent = hash;
     })
     .catch(() => {});
 })();
