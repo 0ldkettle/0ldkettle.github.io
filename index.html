@@ -229,6 +229,28 @@
   }
   #langBtn:active { transform: scale(0.93); }
 
+  /* Goose style toggle button (SVG ↔ PNG) */
+  #styleBtn {
+    position: absolute;
+    bottom: max(12px, env(safe-area-inset-bottom));
+    right: 58px;
+    z-index: 11;
+    background: rgba(10,6,30,.65);
+    border: 1.5px solid rgba(255,255,255,.22);
+    border-radius: 10px;
+    color: #fff;
+    font-size: 12px;
+    font-weight: 800;
+    padding: 5px 9px;
+    cursor: pointer;
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+    letter-spacing: 0.5px;
+    transition: background .15s, transform .1s;
+    pointer-events: auto;
+  }
+  #styleBtn:active { transform: scale(0.93); }
+
   .fly-plus {
     position: absolute;
     width: 34px; height: 34px;
@@ -251,6 +273,7 @@
   </div>
   <div id="motivation"></div>
   <button id="langBtn">EN</button>
+  <button id="styleBtn">SVG</button>
   <div id="credits" role="dialog" aria-modal="true">
     <div class="dialog">
       <h3 id="creditsTitle">About</h3>
@@ -436,6 +459,8 @@ const state = {
   lastTempoTick: 0,
   exploding: false,
   sad: false,
+  sadness: 0, // smoothly interpolates 0..1 toward state.sad
+  gooseStyle: 1, // 0 = PNG, 1 = SVG (default, matches Android)
   quack: false,
   quackingRequests: 0,
   quackUntil: 0,
@@ -496,6 +521,12 @@ const Store = (() => {
 // Restore language preference
 currentLang = Store.get('lang') || 'en';
 if (currentLang !== 'ru') currentLang = 'en';
+
+// Restore goose style preference (default: SVG)
+{
+  const gs = Store.get('goose_style');
+  state.gooseStyle = (gs === '0') ? 0 : 1;
+}
 
 // Restore game score and explosion count
 {
@@ -855,6 +886,251 @@ function applyHeat() {
   state.heat = heat;
 }
 
+// =============================================================
+// SVG goose — vector rendering ported 1:1 from GooseView.java
+// All paths live in a 300x400 viewBox; drawGoose() wraps this
+// with the same outer scale/rotate/translate used by PNG mode.
+// =============================================================
+const SVG_C_BODY   = '#FFFFFF';
+const SVG_C_BEAK   = '#FF9A2B';
+const SVG_C_FOOT   = '#FF9A2B';
+const SVG_C_LINE   = '#1A1A1A';
+const SVG_C_EYEBG  = '#FFFFFF';
+const SVG_C_PUPIL  = '#111111';
+const SVG_C_BLUSH  = 'rgba(255,200,176,0.6)';
+const SVG_C_HIGHLT = '#FFFFFF';
+const SVG_C_MOUTH  = '#6A2B00';
+
+const SVG_WING_LINES = [
+  [115, 270, 140, 280, 165, 275],
+  [135, 285, 160, 293, 185, 288],
+  [108, 250, 135, 258, 160, 253],
+];
+
+// Build each sub-path once as a Path2D for cheap per-frame fills/strokes.
+function _mkPath(build) {
+  const p = new Path2D();
+  build(p);
+  p.closePath();
+  return p;
+}
+const SVG_PATH_BODY = _mkPath(p => {
+  p.moveTo(70, 270);
+  p.bezierCurveTo(40, 255,   45, 200,   88, 178);
+  p.bezierCurveTo(125, 160, 185, 162,  220, 192);
+  p.bezierCurveTo(252, 220, 250, 282,  218, 312);
+  p.bezierCurveTo(192, 328, 155, 330,  125, 325);
+  p.bezierCurveTo(98, 318,   78, 295,  70, 270);
+});
+const SVG_PATH_TAIL = _mkPath(p => {
+  p.moveTo(65, 265);
+  p.quadraticCurveTo(48, 258, 40, 250);
+  p.quadraticCurveTo(52, 262, 58, 275);
+});
+const SVG_PATH_NECK = _mkPath(p => {
+  p.moveTo(135, 185);
+  p.bezierCurveTo(108, 160, 115, 115, 150, 90);
+  p.bezierCurveTo(175, 75,  205, 75,  222, 95);
+  p.bezierCurveTo(225, 105, 218, 112, 208, 112);
+  p.bezierCurveTo(185, 112, 170, 135, 172, 170);
+  p.bezierCurveTo(170, 182, 150, 192, 135, 185);
+});
+const SVG_PATH_WING = _mkPath(p => {
+  p.moveTo(100, 225);
+  p.bezierCurveTo(130, 210, 180, 215, 210, 240);
+  p.bezierCurveTo(220, 265, 195, 295, 160, 295);
+  p.bezierCurveTo(130, 293, 105, 275, 95, 250);
+  p.bezierCurveTo(92, 240,  95, 230, 100, 225);
+});
+const SVG_PATH_BEAK_TOP = _mkPath(p => {
+  p.moveTo(245, 80);
+  p.bezierCurveTo(270, 74, 288, 78, 293, 86);
+  p.bezierCurveTo(288, 90, 270, 90, 252, 90);
+  p.bezierCurveTo(246, 88, 243, 84, 245, 80);
+});
+const SVG_PATH_BEAK_BOT = _mkPath(p => {
+  p.moveTo(252, 92);
+  p.bezierCurveTo(268, 94, 285, 93, 290, 90);
+  p.bezierCurveTo(287, 98, 272, 102, 258, 100);
+  p.bezierCurveTo(251, 98, 249, 94, 252, 92);
+});
+const SVG_PATH_FOOT_BACK = _mkPath(p => {
+  p.moveTo(105, 358);
+  p.quadraticCurveTo(115, 350, 128, 352);
+  p.quadraticCurveTo(145, 354, 152, 362);
+  p.quadraticCurveTo(147, 370, 136, 372);
+  p.quadraticCurveTo(120, 374, 110, 370);
+  p.quadraticCurveTo(102, 366, 105, 358);
+});
+const SVG_PATH_FOOT_FRONT = _mkPath(p => {
+  p.moveTo(150, 365);
+  p.quadraticCurveTo(160, 355, 172, 357);
+  p.quadraticCurveTo(190, 358, 200, 366);
+  p.quadraticCurveTo(196, 376, 182, 378);
+  p.quadraticCurveTo(166, 380, 158, 376);
+  p.quadraticCurveTo(148, 372, 150, 365);
+});
+
+function _svgLegLift(phase, offset) {
+  let p = (phase + offset) % 1;
+  if (p < 0) p += 1;
+  if (p < 0.5) return Math.sin(p * 2 * Math.PI) * 0.5;
+  return 0;
+}
+
+function _svgStrokedPath(g, path, width) {
+  g.lineWidth   = width;
+  g.strokeStyle = SVG_C_LINE;
+  g.lineJoin    = 'round';
+  g.lineCap     = 'round';
+  g.stroke(path);
+}
+
+function _svgFillCircle(g, cx, cy, r, fill) {
+  g.fillStyle = fill;
+  g.beginPath();
+  g.arc(cx, cy, r, 0, Math.PI * 2);
+  g.fill();
+}
+
+function _svgStrokeCircle(g, cx, cy, r, width) {
+  g.lineWidth   = width;
+  g.strokeStyle = SVG_C_LINE;
+  g.beginPath();
+  g.arc(cx, cy, r, 0, Math.PI * 2);
+  g.stroke();
+}
+
+function _svgFillEllipse(g, cx, cy, rx, ry, fill) {
+  g.fillStyle = fill;
+  g.beginPath();
+  g.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
+  g.fill();
+}
+
+function _svgStrokeEllipse(g, cx, cy, rx, ry, width) {
+  g.lineWidth   = width;
+  g.strokeStyle = SVG_C_LINE;
+  g.beginPath();
+  g.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
+  g.stroke();
+}
+
+function _svgDrawEye(g, cx, cy, rOuter, rPupil, highlight, sadness) {
+  _svgFillCircle(g, cx, cy, rOuter, SVG_C_EYEBG);
+  _svgStrokeCircle(g, cx, cy, rOuter, 2);
+  const pxOff = rOuter * 0.25;
+  const pyOff = sadness * rOuter * 0.5;
+  _svgFillCircle(g, cx + pxOff, cy + pyOff, rPupil, SVG_C_PUPIL);
+  if (highlight) {
+    _svgFillCircle(g, cx - rOuter * 0.25, cy - rOuter * 0.4, 1.3, SVG_C_HIGHLT);
+  }
+}
+
+function _svgDrawLeg(g, x1, y1, x2, y2, footPath, baseLineW) {
+  // Leg stem
+  g.lineWidth   = 6;
+  g.strokeStyle = SVG_C_LINE;
+  g.lineJoin    = 'round';
+  g.lineCap     = 'round';
+  g.beginPath();
+  g.moveTo(x1, y1);
+  g.lineTo(x2, y2);
+  g.stroke();
+  // Foot fill + outline
+  g.fillStyle = SVG_C_FOOT;
+  g.fill(footPath);
+  _svgStrokedPath(g, footPath, baseLineW);
+}
+
+// Render the goose in local 300x400 coordinates. Caller must have
+// already scaled the context so these coordinates map to the goose size.
+function drawGooseSvg(g) {
+  const lineW  = 3;
+  const twoPi  = Math.PI * 2;
+  const phase  = (performance.now() / 700) % 1;
+  const sadness = state.sadness;
+
+  const frontLift = _svgLegLift(phase, 0.0);
+  const backLift  = _svgLegLift(phase, 0.5);
+
+  // Back leg (behind body)
+  g.save();
+  g.translate(0, -backLift * 10);
+  _svgDrawLeg(g, 130, 318, 128, 358, SVG_PATH_FOOT_BACK, lineW);
+  g.restore();
+
+  // Body + tail
+  g.fillStyle = SVG_C_BODY;
+  g.fill(SVG_PATH_BODY);
+  g.fill(SVG_PATH_TAIL);
+  _svgStrokedPath(g, SVG_PATH_BODY, lineW);
+  _svgStrokedPath(g, SVG_PATH_TAIL, lineW);
+
+  // Wing outline + feather lines
+  _svgStrokedPath(g, SVG_PATH_WING, lineW);
+  g.lineWidth   = 2.2;
+  g.strokeStyle = SVG_C_LINE;
+  for (const ln of SVG_WING_LINES) {
+    g.beginPath();
+    g.moveTo(ln[0], ln[1]);
+    g.quadraticCurveTo(ln[2], ln[3], ln[4], ln[5]);
+    g.stroke();
+  }
+
+  // Head + neck with subtle vertical bob
+  const headBob = Math.sin(twoPi * phase) * 1.2 * (1 - sadness);
+  g.save();
+  g.translate(0, headBob);
+
+  g.fillStyle = SVG_C_BODY;
+  g.fill(SVG_PATH_NECK);
+  _svgStrokedPath(g, SVG_PATH_NECK, lineW);
+
+  // Head oval (218, 85) rx=36 ry=32
+  _svgFillEllipse(g, 218, 85, 36, 32, SVG_C_BODY);
+  _svgStrokeEllipse(g, 218, 85, 36, 32, lineW);
+  // Blush
+  _svgFillEllipse(g, 202, 100, 7, 3.5, SVG_C_BLUSH);
+
+  // Upper beak + nostril
+  g.fillStyle = SVG_C_BEAK;
+  g.fill(SVG_PATH_BEAK_TOP);
+  _svgStrokedPath(g, SVG_PATH_BEAK_TOP, lineW);
+  _svgFillCircle(g, 278, 82, 1.6, SVG_C_LINE);
+
+  // Lower beak opens when quacking; reveals mouth patch
+  const beakOpen = state.quack ? 6 : 0;
+  g.save();
+  g.translate(0, beakOpen);
+  g.fillStyle = SVG_C_BEAK;
+  g.fill(SVG_PATH_BEAK_BOT);
+  _svgStrokedPath(g, SVG_PATH_BEAK_BOT, lineW);
+  if (state.quack) {
+    g.save();
+    g.translate(0, -beakOpen);
+    // Mouth oval spanning (250..288, 88..96)
+    g.fillStyle = SVG_C_MOUTH;
+    g.beginPath();
+    g.ellipse((250 + 288) / 2, (88 + 96) / 2, (288 - 250) / 2, (96 - 88) / 2, 0, 0, Math.PI * 2);
+    g.fill();
+    g.restore();
+  }
+  g.restore();
+
+  // Eyes (left small, right bigger with highlight)
+  _svgDrawEye(g, 202, 75, 4.5, 2.2, false, sadness);
+  _svgDrawEye(g, 222, 73, 7.5, 3.5, true,  sadness);
+
+  g.restore(); // end head/neck bob
+
+  // Front leg (in front of body)
+  g.save();
+  g.translate(0, -frontLift * 10);
+  _svgDrawLeg(g, 168, 322, 172, 365, SVG_PATH_FOOT_FRONT, lineW);
+  g.restore();
+}
+
 function drawGoose() {
   if (state.gooseHidden) return;
   const c    = gooseCenter();
@@ -867,20 +1143,35 @@ function drawGoose() {
   const sy = state.gooseBaseScale * state.gooseAnimScaleY;
   ctx.scale(sx, sy);
   const drawW = size, drawH = size;
-  const img = state.quack ? gooseBodyQuack : gooseBody;
 
   // Sadness: desaturate and dim via CSS filter
   if (state.sad) {
     ctx.filter = 'saturate(0.5) brightness(0.85)';
   }
-  if (img && img.complete && img.naturalWidth) {
-    ctx.drawImage(img, -drawW / 2, -drawH / 2, drawW, drawH);
-  } else if (gooseImg && gooseImg.complete && gooseImg.naturalWidth) {
-    ctx.drawImage(gooseImg, -drawW / 2, -drawH / 2, drawW, drawH);
+
+  if (state.gooseStyle === 1) {
+    // SVG mode: fit 300x400 viewBox so the rendered goose looks the same
+    // size as the PNG. The PNG fills ~full width of `size`, while the SVG
+    // body only occupies x≈40..293 (≈253/300 of the viewBox width), so we
+    // upscale by ~1.18x to roughly match. vbH (400) dominates after scaling.
+    const vbW = 300, vbH = 400;
+    const svgScale = (size / vbH) * 1.30;
+    ctx.save();
+    ctx.scale(svgScale, svgScale);
+    ctx.translate(-vbW / 2, -vbH / 2);
+    drawGooseSvg(ctx);
+    ctx.restore();
   } else {
-    // Fallback placeholder while images are loading
-    ctx.fillStyle = '#fff';
-    ctx.beginPath(); ctx.arc(0, 0, drawW * 0.4, 0, Math.PI * 2); ctx.fill();
+    const img = state.quack ? gooseBodyQuack : gooseBody;
+    if (img && img.complete && img.naturalWidth) {
+      ctx.drawImage(img, -drawW / 2, -drawH / 2, drawW, drawH);
+    } else if (gooseImg && gooseImg.complete && gooseImg.naturalWidth) {
+      ctx.drawImage(gooseImg, -drawW / 2, -drawH / 2, drawW, drawH);
+    } else {
+      // Fallback placeholder while images are loading
+      ctx.fillStyle = '#fff';
+      ctx.beginPath(); ctx.arc(0, 0, drawW * 0.4, 0, Math.PI * 2); ctx.fill();
+    }
   }
   ctx.filter = 'none';
   ctx.restore();
@@ -1479,6 +1770,20 @@ langBtn.addEventListener('click', () => {
 applyLanguage(currentLang);
 
 // =============================================================
+// Goose style toggle (SVG ↔ PNG) — persists via Store.
+// =============================================================
+const styleBtn = document.getElementById('styleBtn');
+function applyGooseStyle(style) {
+  state.gooseStyle = (style === 0) ? 0 : 1;
+  Store.set('goose_style', String(state.gooseStyle));
+  styleBtn.textContent = state.gooseStyle === 1 ? 'SVG' : 'PNG';
+}
+styleBtn.addEventListener('click', () => {
+  applyGooseStyle(state.gooseStyle === 1 ? 0 : 1);
+});
+applyGooseStyle(state.gooseStyle);
+
+// =============================================================
 // Sadness timer — goose looks sad when ignored
 // =============================================================
 state.sadnessTimeout = setTimeout(() => { state.sad = true; }, SADNESS_DELAY_MS);
@@ -1533,6 +1838,13 @@ function frame(now) {
     ctx.restore();
   }
   ctx.globalAlpha = 1;
+
+  // Smoothly ease sadness toward its target (matches Android ±0.06 lerp).
+  {
+    const target = state.sad ? 1 : 0;
+    state.sadness += (target - state.sadness) * 0.06;
+    if (Math.abs(target - state.sadness) < 0.003) state.sadness = target;
+  }
 
   // Draw goose with current transform
   updateGooseAnim(dt);
