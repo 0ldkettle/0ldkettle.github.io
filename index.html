@@ -543,23 +543,21 @@ const TEMPO_EXPLODE  = 1.0;
 const MIN_SCALE      = 0.30;
 const EXPLODE_BONUS  = 500;
 
-// Tempo now rewards fast tapping and decays between taps.
-// Interval (ms) -> tempo gain per tap. Anything above SLOW_MS gives nothing.
-const TEMPO_FAST_MS  = 110;   // <= this: maximum gain (frantic tapping only)
-const TEMPO_MID_MS   = 180;
-const TEMPO_SLOW_MS  = 320;   // > this: zero gain
-// Rebalanced: previous gains were smaller than the per-tap decay even at
-// max tap speed, so tempo could literally never grow. Tuned so that
-// sustained ~8-9 taps/sec fills the bar in ~5-6 seconds, while slower
-// tapping still drains.
-// Balance target: sustained ~21 taps/sec (fast zone) fills the bar in
-// exactly 10 seconds (0.014333 * 21 - 0.18 = 0.1 /sec → 1.0 in 10s).
-// Slower tapping drains.
-const TEMPO_GAIN_FAST = 0.01333;
-const TEMPO_GAIN_MID  = 0.005;
-const TEMPO_GAIN_SLOW = 0.0008;
-// Tempo lost per second of idleness. 0.18 = full bar drains in ~5.5s.
+// Tempo model (v2 — rate-based):
+// We count taps over a sliding 1-second window and compute tapsPerSec.
+// Tempo grows at `tapsPerSec * TEMPO_GAIN_PER_TAP` and decays at
+// `TEMPO_DECAY_PER_SEC`. This way it doesn't matter HOW you reach the
+// rate — 1 finger fast, 5 fingers slower, or 10 fingers at once. The
+// total taps/second is what counts.
+//
+// Target: sustained 21 taps/sec fills the bar in 10s:
+//   21 * 0.02195 - 0.18 = 0.281 per sec... no wait.
+// With per-second model: tempȯ = tapsPerSec * gain - decay.
+// Need tempȯ = 0.1 when tapsPerSec = 21:  21*g - 0.18 = 0.1  → g = 0.01333.
+// Below ~13.5 taps/sec the bar drains.
+const TEMPO_GAIN_PER_TAP  = 0.01333;
 const TEMPO_DECAY_PER_SEC = 0.18;
+const TEMPO_RATE_WINDOW_MS = 1000;
 const SADNESS_DELAY_MS = 5000;
 
 // Anti-cheat buffer settings
@@ -575,6 +573,10 @@ const state = {
   explodeCount: 0,
   tempo: 0,
   lastTempoTick: 0,
+  // Ring buffer of recent tap timestamps (ms). Trimmed every frame to
+  // keep only taps within TEMPO_RATE_WINDOW_MS. Size of this array,
+  // normalized per second, is the instantaneous tap rate.
+  tapTimes: [],
   exploding: false,
   sad: false,
   sadness: 0, // smoothly interpolates 0..1 toward state.sad
@@ -1853,22 +1855,10 @@ function onGooseTap(x, y) {
   if (state.sadnessTimeout) clearTimeout(state.sadnessTimeout);
   state.sadnessTimeout = setTimeout(() => { state.sad = true; }, SADNESS_DELAY_MS);
 
-  // Advance tempo — gain scales with tap speed.
-  const dt = state.lastTapAt ? (now - state.lastTapAt) : 9999;
+  // Rate-based tempo: just register the timestamp. The main render loop
+  // computes taps-per-second over a 1s window and advances state.tempo.
+  state.tapTimes.push(now);
   state.lastTapAt = now;
-  let gain;
-  if      (dt <= TEMPO_FAST_MS) gain = TEMPO_GAIN_FAST;
-  else if (dt <= TEMPO_MID_MS)  gain = TEMPO_GAIN_MID;
-  else if (dt <= TEMPO_SLOW_MS) gain = TEMPO_GAIN_SLOW;
-  else                          gain = 0;
-  state.tempo += gain;
-  if (state.tempo >= TEMPO_EXPLODE) {
-    triggerExplode();
-  } else {
-    applyTempoScale();
-    applyHeat();
-    updateMotivation();
-  }
 }
 
 function onPointArrived() {
@@ -1897,6 +1887,7 @@ function triggerExplode() {
   state.lastMotivationTier = -1;
   state.heat  = 0;
   state.tempo = 0;
+  state.tapTimes.length = 0;
 
   const c = gooseCenter();
   spawnExplode(c.x, c.y);
@@ -2083,12 +2074,27 @@ function frame(now) {
   lastFrame   = now;
   const dt    = Math.min(0.05, dtRaw); // cap delta to avoid spiral-of-death
 
-  // Tempo decays between taps so only sustained fast clicking fills the bar.
-  if (!state.exploding && state.tempo > 0) {
-    state.tempo = Math.max(0, state.tempo - TEMPO_DECAY_PER_SEC * dt);
-    applyTempoScale();
-    applyHeat();
-    updateMotivation();
+  // Rate-based tempo. Trim the tap-time buffer to the 1s window, then:
+  //   tempȯ = tapsPerSec * TEMPO_GAIN_PER_TAP - TEMPO_DECAY_PER_SEC
+  // This way 5 fingers tapping 4/sec each behaves like 1 finger tapping
+  // 20/sec — only the total rate matters.
+  if (!state.exploding) {
+    const cutoff = now - TEMPO_RATE_WINDOW_MS;
+    const tt = state.tapTimes;
+    // Drop stale timestamps from the front.
+    let drop = 0;
+    while (drop < tt.length && tt[drop] < cutoff) drop++;
+    if (drop > 0) tt.splice(0, drop);
+    const tapsPerSec = tt.length; // window is exactly 1s
+    const delta = tapsPerSec * TEMPO_GAIN_PER_TAP - TEMPO_DECAY_PER_SEC;
+    state.tempo = Math.max(0, state.tempo + delta * dt);
+    if (state.tempo >= TEMPO_EXPLODE) {
+      triggerExplode();
+    } else {
+      applyTempoScale();
+      applyHeat();
+      updateMotivation();
+    }
   }
 
   // Clear canvas
