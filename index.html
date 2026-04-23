@@ -321,6 +321,8 @@
   <div class="hud hud-top">
     <div id="score" class="chip">Score: 0</div>
     <div id="explodeCount" class="chip">Explosions: 0</div>
+    <!-- TEMP viewport diagnostic -->
+    <div id="vpDbg" class="chip" style="color:#2EE6FF;font-size:10px;line-height:1.35;text-align:left;white-space:pre;">vp</div>
   </div>
   <div id="motivation"></div>
   <span id="buildHash" aria-label="Build commit"></span>
@@ -372,6 +374,20 @@
   apply();
   // Initial settle retries.
   [50, 150, 300, 600, 1200, 2500].forEach(d => setTimeout(apply, d));
+  // TEMP: on-screen viewport diagnostic
+  setInterval(() => {
+    const el = document.getElementById('vpDbg');
+    if (!el) return;
+    const vvh = window.visualViewport ? Math.round(window.visualViewport.height) : '-';
+    const vvo = window.visualViewport ? Math.round(window.visualViewport.offsetTop) : '-';
+    el.textContent =
+      'inner: ' + window.innerHeight +
+      '\nvv h: ' + vvh +
+      '\nvv ot: ' + vvo +
+      '\nmaxH: ' + maxH +
+      '\ndocEl: ' + document.documentElement.clientHeight +
+      '\nscreen: ' + screen.height;
+  }, 200);
   window.addEventListener('resize', apply);
   window.addEventListener('orientationchange', reprobe);
   if (window.visualViewport) {
