@@ -48,7 +48,11 @@
     overscroll-behavior: none;
     user-select: none;
     -webkit-user-select: none;
-    touch-action: manipulation;
+    /* `none` (not `manipulation`) — Android Chrome otherwise introduces a
+       ~300ms delay and drops rapid successive taps while waiting to decide
+       between tap / double-tap-zoom / pan. iOS already treats this as a
+       fast-tap surface. */
+    touch-action: none;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, Arial, sans-serif;
     color: var(--ink);
   }
@@ -71,7 +75,9 @@
     position: absolute; left: 0; top: 0;
     width: 100%; height: 100%;
     display: block;
-    touch-action: manipulation;
+    /* Disable ALL browser-owned touch gestures on the game surface so every
+       tap fires instantly on Android Chrome (no double-tap-zoom wait). */
+    touch-action: none;
   }
   .hud {
     position: absolute;
