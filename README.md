@@ -23,9 +23,9 @@ The further you push, the smaller the goose gets, the redder the screen glows, a
 
 ## Play Online
 
-`https://USERNAME.github.io/REPO/`
+`https://0ldkettle.github.io/`
 
-Replace `USERNAME` and `REPO` with your GitHub handle and repository name after deploying.
+Once deployed, it lives at the URL above.
 
 ## Local Development
 
