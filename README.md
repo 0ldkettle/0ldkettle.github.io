@@ -64,7 +64,7 @@ Remixed from "20130403_duck.04.wav" by *dobroide* (CC BY 3.0)
 
 ## License
 
-[MIT](LICENSE) — Copyright (c) 2026 Goose Clicker Contributors
+[MIT](LICENSE) — Copyright (c) 2026 0ldkettle
 
 ---
 
