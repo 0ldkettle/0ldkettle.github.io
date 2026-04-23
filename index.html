@@ -99,13 +99,20 @@
     font-size: 13px;
     padding: 7px 11px;
     border-radius: 14px;
-    background: rgba(10,6,30,.55);
+    background: rgba(10,6,30,.78);
     border: 1.5px solid rgba(255,255,255,.18);
-    backdrop-filter: blur(6px);
-    -webkit-backdrop-filter: blur(6px);
     white-space: nowrap;
     transition: transform .12s ease-out;
     will-change: transform;
+  }
+  /* Heavy backdrop blur only on capable desktop browsers — iOS Safari
+     hitches hard when repainting blurred HUD on every frame. */
+  @media (hover: hover) and (pointer: fine) {
+    .chip {
+      background: rgba(10,6,30,.55);
+      backdrop-filter: blur(6px);
+      -webkit-backdrop-filter: blur(6px);
+    }
   }
   #score { color: var(--neon-yellow); text-align: left; text-shadow: 0 0 10px rgba(255,210,62,.6); }
   #explodeCount { color: var(--neon-pink); text-align: right; text-shadow: 0 0 10px rgba(255,62,127,.55); }
@@ -224,7 +231,7 @@
     bottom: max(12px, env(safe-area-inset-bottom));
     right: 12px;
     z-index: 11;
-    background: rgba(10,6,30,.65);
+    background: rgba(10,6,30,.85);
     border: 1.5px solid rgba(255,255,255,.22);
     border-radius: 10px;
     color: #fff;
@@ -232,8 +239,6 @@
     font-weight: 800;
     padding: 5px 9px;
     cursor: pointer;
-    backdrop-filter: blur(6px);
-    -webkit-backdrop-filter: blur(6px);
     letter-spacing: 0.5px;
     transition: background .15s, transform .1s;
     pointer-events: auto;
@@ -246,7 +251,7 @@
     bottom: max(12px, env(safe-area-inset-bottom));
     right: 58px;
     z-index: 11;
-    background: rgba(10,6,30,.65);
+    background: rgba(10,6,30,.85);
     border: 1.5px solid rgba(255,255,255,.22);
     border-radius: 10px;
     color: #fff;
@@ -254,13 +259,18 @@
     font-weight: 800;
     padding: 5px 9px;
     cursor: pointer;
-    backdrop-filter: blur(6px);
-    -webkit-backdrop-filter: blur(6px);
     letter-spacing: 0.5px;
     transition: background .15s, transform .1s;
     pointer-events: auto;
   }
   #styleBtn:active { transform: scale(0.93); }
+  @media (hover: hover) and (pointer: fine) {
+    #langBtn, #styleBtn {
+      background: rgba(10,6,30,.65);
+      backdrop-filter: blur(6px);
+      -webkit-backdrop-filter: blur(6px);
+    }
+  }
 
   .fly-plus {
     position: absolute;
@@ -559,8 +569,14 @@ const cv  = document.getElementById('cv');
 const ctx = cv.getContext('2d');
 let W = 0, H = 0, DPR = 1;
 
+// Coarse pointer = phones/tablets. iOS Safari hits a fill-rate wall when rendering
+// hundreds of particles at 3x DPR, so we cap DPR lower and halve particle counts.
+const IS_TOUCH_DEVICE = matchMedia('(hover: none) and (pointer: coarse)').matches;
+const FX_SCALE = IS_TOUCH_DEVICE ? 0.5 : 1;     // particle-count multiplier
+const DPR_CAP  = IS_TOUCH_DEVICE ? 2 : 2.5;
+
 function resize() {
-  DPR = Math.min(window.devicePixelRatio || 1, 2.5);
+  DPR = Math.min(window.devicePixelRatio || 1, DPR_CAP);
   const stage = document.getElementById('stage');
   const r = stage.getBoundingClientRect();
   W = Math.round(r.width);
@@ -724,9 +740,12 @@ class Ripple {
   }
 }
 
+// Helper: scale a particle count by FX_SCALE, never below 1.
+const fx = (n) => Math.max(1, Math.round(n * FX_SCALE));
+
 function spawnTapFx(x, y) {
   ripples.push(new Ripple(x, y));
-  const n = 7 + Math.floor(Math.random() * 4);
+  const n = fx(7 + Math.floor(Math.random() * 4));
   for (let i = 0; i < n; i++) feathers.push(new Feather(x, y));
 }
 function spawnSpark(x, y) {
@@ -734,7 +753,7 @@ function spawnSpark(x, y) {
   sparks.push(new Spark(x, y, c, false));
 }
 function spawnBurst(x, y) {
-  const n = 14 + Math.floor(Math.random() * 6);
+  const n = fx(14 + Math.floor(Math.random() * 6));
   for (let i = 0; i < n; i++) {
     sparks.push(new Spark(x, y, SPARK_COLORS[Math.floor(Math.random() * SPARK_COLORS.length)], true));
   }
@@ -744,17 +763,17 @@ function spawnExplode(x, y) {
   ripples.push(new Ripple(x, y, 40, 680, 0.85));
   ripples.push(new Ripple(x, y, 20, 420, 0.55));
   ripples.push(new Ripple(x, y, 10, 220, 0.35));
-  const n = 70 + Math.floor(Math.random() * 30);
+  const n = fx(70 + Math.floor(Math.random() * 30));
   for (let i = 0; i < n; i++) {
     sparks.push(new Spark(x, y, SPARK_COLORS[Math.floor(Math.random() * SPARK_COLORS.length)], true));
   }
-  const fc = 45 + Math.floor(Math.random() * 15);
+  const fc = fx(45 + Math.floor(Math.random() * 15));
   for (let i = 0; i < fc; i++) feathers.push(new Feather(x, y));
 
   // Secondary burst after short delay
   setTimeout(() => {
     ripples.push(new Ripple(x, y, 30, 500, 0.65));
-    const n2 = 30 + Math.floor(Math.random() * 15);
+    const n2 = fx(30 + Math.floor(Math.random() * 15));
     for (let i = 0; i < n2; i++) {
       const ox = x + (Math.random() - 0.5) * 120;
       const oy = y + (Math.random() - 0.5) * 120;
@@ -765,7 +784,7 @@ function spawnExplode(x, y) {
   // Third poof
   setTimeout(() => {
     ripples.push(new Ripple(x, y, 20, 380, 0.55));
-    const n3 = 20 + Math.floor(Math.random() * 10);
+    const n3 = fx(20 + Math.floor(Math.random() * 10));
     for (let i = 0; i < n3; i++) {
       const ox = x + (Math.random() - 0.5) * 180;
       const oy = y + (Math.random() - 0.5) * 180;
@@ -1360,7 +1379,9 @@ function flyPointToScore(startX, startY) {
     const scale = 0.4 + 1.1 * eased - 0.45 * eased * eased;
     plus.style.transform = `translate(${bx}px,${by}px) scale(${scale}) rotate(${spin * eased}deg)`;
     plus.style.opacity   = Math.min(1, t * 5);
-    if (eased - lastSparkT > 0.05) {
+    // Trailing sparks only on desktop — on mobile they compound with the
+    // burst at the end and tank the frame rate.
+    if (!IS_TOUCH_DEVICE && eased - lastSparkT > 0.05) {
       spawnSpark(bx + 17, by + 17);
       lastSparkT = eased;
     }
@@ -1405,7 +1426,7 @@ function flyBonusCube(startX, startY, value) {
     const scale = 0.4 + 1.1 * eased - 0.45 * eased * eased;
     plus.style.transform = `translate(${bx}px,${by}px) scale(${scale}) rotate(${spin * eased}deg)`;
     plus.style.opacity   = Math.min(1, t * 5);
-    if (eased - lastSparkT > 0.05) {
+    if (!IS_TOUCH_DEVICE && eased - lastSparkT > 0.05) {
       spawnSpark(bx + 20, by + 20);
       lastSparkT = eased;
     }
