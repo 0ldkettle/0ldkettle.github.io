@@ -931,19 +931,19 @@ function drawBackground(dt) {
   state.cubeAngle  += dt * 2.5;
   state.pulsePhase += dt * Math.PI * 2 * 1.6;
 
-  const groundH   = Math.min(110, H * 0.14);
-  const groundTop = H - groundH;
+  // Spikes now sit directly on the bottom edge — no purple ground strip.
+  const groundTop = H;
 
-  // Scrolling cyan grid above the ground strip
+  // Scrolling cyan grid across the full stage height
   ctx.strokeStyle = 'rgba(174,232,255,0.33)';
   ctx.lineWidth = 1;
   const cell = 36;
   ctx.beginPath();
   const ox = -((state.bgScroll) % cell);
   for (let x = ox; x < W + cell; x += cell) {
-    ctx.moveTo(x, 0); ctx.lineTo(x, groundTop);
+    ctx.moveTo(x, 0); ctx.lineTo(x, H);
   }
-  for (let y = 0; y <= groundTop; y += cell) {
+  for (let y = 0; y <= H; y += cell) {
     ctx.moveTo(0, y); ctx.lineTo(W, y);
   }
   ctx.stroke();
@@ -969,7 +969,7 @@ function drawBackground(dt) {
     ctx.restore();
   }
 
-  // Horizon glow
+  // Horizon glow fading up from the bottom of the screen
   const grad = ctx.createLinearGradient(0, groundTop - 80, 0, groundTop);
   grad.addColorStop(0,   'rgba(0,0,0,0)');
   grad.addColorStop(0.6, 'rgba(255,111,207,0.35)');
@@ -977,13 +977,11 @@ function drawBackground(dt) {
   ctx.fillStyle = grad;
   ctx.fillRect(0, groundTop - 80, W, 80);
 
-  // Ground strip
-  ctx.fillStyle = '#1a0a3c';
-  ctx.fillRect(0, groundTop, W, groundH);
+  // Cyan baseline along the very bottom
   ctx.fillStyle = '#00E5FF';
-  ctx.fillRect(0, groundTop - 2, W, 4);
+  ctx.fillRect(0, groundTop - 2, W, 2);
 
-  // Scrolling pink spikes along the ground edge
+  // Scrolling pink spikes sitting on the bottom edge
   const baseW = 34, hSpike = 26, spacing = 46;
   const offset = -((state.bgScroll * 0.55) % spacing);
   ctx.fillStyle   = '#FF3E7F';
