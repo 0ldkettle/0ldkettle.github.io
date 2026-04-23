@@ -82,34 +82,12 @@
   .hud > * { pointer-events: auto; }
   .hud-top {
     top: 0;
-    padding: max(14px, env(safe-area-inset-top)) 16px 10px 16px;
+    /* Leave room on the right for the vertical control stack. */
+    padding: max(14px, env(safe-area-inset-top)) 64px 10px 16px;
     display: flex;
+    flex-direction: column;
     align-items: flex-start;
-    justify-content: space-between;
-    gap: 12px;
-  }
-  .hud-title {
-    text-align: center;
-    flex: 1;
-  }
-  .title {
-    font-weight: 900;
-    font-size: 18px;
-    letter-spacing: 0.3px;
-    text-shadow: 0 2px 0 rgba(0,0,0,.4), 0 0 14px rgba(46,230,255,.55);
-    cursor: pointer;
-    display: inline-block;
-    padding: 4px 8px;
-    white-space: nowrap;
-  }
-  @media (min-width: 420px) {
-    .title { font-size: 22px; }
-  }
-  .title-hint {
-    font-size: 10px;
-    opacity: .55;
-    font-weight: 500;
-    margin-top: 2px;
+    gap: 6px;
   }
   .chip {
     font-weight: 800;
@@ -307,17 +285,15 @@
   <canvas id="cv"></canvas>
   <div class="hud hud-top">
     <div id="score" class="chip">Score: 0</div>
-    <div class="hud-title">
-      <div class="title" id="title">Goose Clicker</div>
-      <div class="title-hint" id="titleHint">long-press title for credits</div>
-    </div>
     <div id="explodeCount" class="chip">Explosions: 0</div>
   </div>
   <div id="motivation"></div>
   <span id="buildHash" aria-label="Build commit"></span>
-  <button id="langBtn">EN</button>
-  <button id="styleBtn">SVG</button>
-  <button id="muteBtn" aria-label="Toggle sound" title="Toggle sound">🔊</button>
+  <div id="controls">
+    <button id="langBtn">EN</button>
+    <button id="styleBtn">SVG</button>
+    <button id="muteBtn" aria-label="Toggle sound" title="Long-press for credits">🔊</button>
+  </div>
   <div id="credits" role="dialog" aria-modal="true">
     <div class="dialog">
       <h3 id="creditsTitle">About</h3>
@@ -629,9 +605,18 @@ const Store = (() => {
   };
 })();
 
-// Restore language preference
-currentLang = Store.get('lang') || 'en';
-if (currentLang !== 'ru') currentLang = 'en';
+// Restore language preference.
+// Default: system language (Russian if the browser/OS locale starts with "ru",
+// English otherwise). Once the user explicitly picks a language, we remember it.
+{
+  const saved = Store.get('lang');
+  if (saved === 'ru' || saved === 'en') {
+    currentLang = saved;
+  } else {
+    const navLang = (navigator.language || navigator.userLanguage || 'en').toLowerCase();
+    currentLang = navLang.startsWith('ru') ? 'ru' : 'en';
+  }
+}
 
 // Restore goose style preference (default: SVG)
 {
@@ -987,15 +972,23 @@ function drawBackground(dt) {
   }
   ctx.stroke();
 
-  // Floating rotating cubes
+  // Floating rotating cyan cubes drifting across the whole stage.
+  // y is in [0..1] of the full canvas height so they populate everything.
   const cubes = [
-    { x: 0.15, y: 0.18, size: 28, speed:  1.0 },
-    { x: 0.55, y: 0.12, size: 34, speed: -1.3 },
-    { x: 0.85, y: 0.28, size: 22, speed:  0.7 },
+    { x: 0.12, y: 0.08, size: 26, speed:  1.0 },
+    { x: 0.55, y: 0.15, size: 34, speed: -1.3 },
+    { x: 0.85, y: 0.22, size: 22, speed:  0.7 },
+    { x: 0.30, y: 0.34, size: 20, speed: -0.9 },
+    { x: 0.70, y: 0.42, size: 28, speed:  1.1 },
+    { x: 0.18, y: 0.52, size: 24, speed: -0.6 },
+    { x: 0.48, y: 0.60, size: 18, speed:  1.4 },
+    { x: 0.82, y: 0.66, size: 30, speed: -1.0 },
+    { x: 0.22, y: 0.78, size: 22, speed:  0.8 },
+    { x: 0.62, y: 0.84, size: 26, speed: -1.2 },
   ];
   for (const c of cubes) {
     ctx.save();
-    ctx.translate(c.x * W, c.y * groundTop);
+    ctx.translate(c.x * W, c.y * H);
     ctx.rotate(state.cubeAngle * c.speed);
     const half = c.size / 2;
     ctx.fillStyle   = '#2EE6FF';
@@ -1921,9 +1914,9 @@ cv.addEventListener('contextmenu', (e) => e.preventDefault());
 document.addEventListener('gesturestart', (e) => e.preventDefault());
 
 // =============================================================
-// Long-press on title → credits dialog
+// Credits dialog — opened via long-press on the mute button.
+// The title has been removed; long-press now lives on muteBtn.
 // =============================================================
-const titleEl      = document.getElementById('title');
 const creditsDialog = document.getElementById('credits');
 
 function renderCredits() {
@@ -1939,21 +1932,36 @@ creditsDialog.addEventListener('click', (e) => {
   if (e.target === creditsDialog) creditsDialog.classList.remove('show');
 });
 
-let titleLongPressTimer = null;
-function startLongPress() {
-  clearTimeout(titleLongPressTimer);
-  titleLongPressTimer = setTimeout(() => {
-    creditsDialog.classList.add('show');
-  }, 550);
+// Long-press attach helper — binds start/cancel across touch and mouse.
+// onFire runs when the press reaches the threshold; if it fires, the next
+// synthetic click on the element is suppressed so the normal button action
+// (e.g. toggle mute) doesn't also trigger.
+function attachLongPress(el, onFire, ms = 550) {
+  let timer = null;
+  let fired = false;
+  const start = () => {
+    fired = false;
+    clearTimeout(timer);
+    timer = setTimeout(() => { fired = true; onFire(); }, ms);
+  };
+  const cancel = () => clearTimeout(timer);
+  el.addEventListener('touchstart',  start,  { passive: true });
+  el.addEventListener('touchend',    cancel);
+  el.addEventListener('touchcancel', cancel);
+  el.addEventListener('touchmove',   cancel);
+  el.addEventListener('mousedown',   start);
+  el.addEventListener('mouseup',     cancel);
+  el.addEventListener('mouseleave',  cancel);
+  // Swallow the click that follows a long-press so it doesn't also
+  // toggle mute or trigger any other default click handler.
+  el.addEventListener('click', (e) => {
+    if (fired) {
+      e.stopImmediatePropagation();
+      e.preventDefault();
+      fired = false;
+    }
+  }, true);
 }
-function cancelLongPress() { clearTimeout(titleLongPressTimer); }
-titleEl.addEventListener('touchstart',  () => startLongPress(), { passive: true });
-titleEl.addEventListener('touchend',    cancelLongPress);
-titleEl.addEventListener('touchcancel', cancelLongPress);
-titleEl.addEventListener('touchmove',   cancelLongPress);
-titleEl.addEventListener('mousedown',   startLongPress);
-titleEl.addEventListener('mouseup',     cancelLongPress);
-titleEl.addEventListener('mouseleave',  cancelLongPress);
 
 // =============================================================
 // Language switcher button
@@ -1967,9 +1975,7 @@ function applyLanguage(lang) {
   document.documentElement.lang = lang;
 
   // Update all localized static text
-  document.title                         = t('app_name');
-  document.getElementById('title').textContent = t('app_name');
-  document.getElementById('titleHint').textContent = t('title_hint');
+  document.title = t('app_name');
   updateScoreText();
   updateExplodeText();
   renderCredits();
@@ -2013,6 +2019,11 @@ muteBtn.addEventListener('click', () => {
   applyMuted(!state.muted);
 });
 applyMuted(state.muted);
+
+// Long-press on the mute button opens the credits/about dialog.
+attachLongPress(muteBtn, () => {
+  creditsDialog.classList.add('show');
+});
 
 // =============================================================
 // Sadness timer — goose looks sad when ignored
