@@ -463,6 +463,17 @@ const TEMPO_PER_TAP  = 0.0476;
 const TEMPO_EXPLODE  = 1.0;
 const MIN_SCALE      = 0.30;
 const EXPLODE_BONUS  = 500;
+
+// Tempo now rewards fast tapping and decays between taps.
+// Interval (ms) -> tempo gain per tap. Anything above SLOW_MS gives nothing.
+const TEMPO_FAST_MS  = 120;   // <= this: maximum gain
+const TEMPO_MID_MS   = 250;
+const TEMPO_SLOW_MS  = 450;   // > this: zero gain
+const TEMPO_GAIN_FAST = 0.060;
+const TEMPO_GAIN_MID  = 0.030;
+const TEMPO_GAIN_SLOW = 0.010;
+// Tempo lost per second of idleness. 0.35 = full bar drains in ~3s.
+const TEMPO_DECAY_PER_SEC = 0.35;
 const SADNESS_DELAY_MS = 5000;
 
 // Anti-cheat buffer settings
@@ -508,6 +519,8 @@ const state = {
   pulsePhase: 0,
   // Sadness timer handle
   sadnessTimeout: null,
+  // Timestamp (ms) of the last tap — used by the speed-sensitive tempo curve.
+  lastTapAt: 0,
   // Anti-cheat tap interval ring buffer
   tapIntervals: new Array(CHEAT_BUFFER_SIZE).fill(0),
   tapXs: new Array(CHEAT_BUFFER_SIZE).fill(0),
@@ -1655,8 +1668,15 @@ function onGooseTap(x, y) {
   if (state.sadnessTimeout) clearTimeout(state.sadnessTimeout);
   state.sadnessTimeout = setTimeout(() => { state.sad = true; }, SADNESS_DELAY_MS);
 
-  // Advance tempo
-  state.tempo += TEMPO_PER_TAP;
+  // Advance tempo — gain scales with tap speed.
+  const dt = state.lastTapAt ? (now - state.lastTapAt) : 9999;
+  state.lastTapAt = now;
+  let gain;
+  if      (dt <= TEMPO_FAST_MS) gain = TEMPO_GAIN_FAST;
+  else if (dt <= TEMPO_MID_MS)  gain = TEMPO_GAIN_MID;
+  else if (dt <= TEMPO_SLOW_MS) gain = TEMPO_GAIN_SLOW;
+  else                          gain = 0;
+  state.tempo += gain;
   if (state.tempo >= TEMPO_EXPLODE) {
     triggerExplode();
   } else {
@@ -1835,8 +1855,13 @@ function frame(now) {
   lastFrame   = now;
   const dt    = Math.min(0.05, dtRaw); // cap delta to avoid spiral-of-death
 
-  // Tempo does not decay in v5.1
-  // (TEMPO_DECAY=1.0 is referenced in Android source but web brief says tempo never falls)
+  // Tempo decays between taps so only sustained fast clicking fills the bar.
+  if (!state.exploding && state.tempo > 0) {
+    state.tempo = Math.max(0, state.tempo - TEMPO_DECAY_PER_SEC * dt);
+    applyTempoScale();
+    applyHeat();
+    updateMotivation();
+  }
 
   // Clear canvas
   ctx.clearRect(0, 0, W, H);
