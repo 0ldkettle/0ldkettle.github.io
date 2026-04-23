@@ -830,7 +830,8 @@ class Ripple {
 const fx = (n) => Math.max(1, Math.round(n * FX_SCALE));
 
 function spawnTapFx(x, y) {
-  ripples.push(new Ripple(x, y));
+  // Tap ripple — 1.5× the default size for a more visible tap feedback.
+  ripples.push(new Ripple(x, y, 8, 52, 0.38));
   const n = fx(7 + Math.floor(Math.random() * 4));
   for (let i = 0; i < n; i++) feathers.push(new Feather(x, y));
 }
