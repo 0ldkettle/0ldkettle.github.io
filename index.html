@@ -466,14 +466,14 @@ const EXPLODE_BONUS  = 500;
 
 // Tempo now rewards fast tapping and decays between taps.
 // Interval (ms) -> tempo gain per tap. Anything above SLOW_MS gives nothing.
-const TEMPO_FAST_MS  = 160;   // <= this: maximum gain (frantic tapping)
-const TEMPO_MID_MS   = 300;
-const TEMPO_SLOW_MS  = 500;   // > this: zero gain
-const TEMPO_GAIN_FAST = 0.090;
-const TEMPO_GAIN_MID  = 0.035;
-const TEMPO_GAIN_SLOW = 0.008;
-// Tempo lost per second of idleness. 0.30 = full bar drains in ~3.3s.
-const TEMPO_DECAY_PER_SEC = 0.30;
+const TEMPO_FAST_MS  = 110;   // <= this: maximum gain (frantic tapping only)
+const TEMPO_MID_MS   = 180;
+const TEMPO_SLOW_MS  = 320;   // > this: zero gain
+const TEMPO_GAIN_FAST = 0.030;
+const TEMPO_GAIN_MID  = 0.010;
+const TEMPO_GAIN_SLOW = 0.002;
+// Tempo lost per second of idleness. 0.18 = full bar drains in ~5.5s.
+const TEMPO_DECAY_PER_SEC = 0.18;
 const SADNESS_DELAY_MS = 5000;
 
 // Anti-cheat buffer settings
