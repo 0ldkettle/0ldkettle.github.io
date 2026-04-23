@@ -550,13 +550,13 @@ const EXPLODE_BONUS  = 500;
 // rate — 1 finger fast, 5 fingers slower, or 10 fingers at once. The
 // total taps/second is what counts.
 //
-// Target: sustained 21 taps/sec fills the bar in 10s:
-//   21 * 0.02195 - 0.18 = 0.281 per sec... no wait.
-// With per-second model: tempȯ = tapsPerSec * gain - decay.
-// Need tempȯ = 0.1 when tapsPerSec = 21:  21*g - 0.18 = 0.1  → g = 0.01333.
-// Below ~13.5 taps/sec the bar drains.
-const TEMPO_GAIN_PER_TAP  = 0.01333;
-const TEMPO_DECAY_PER_SEC = 0.18;
+// Targets:
+//   • 17 taps/sec = exact break-even (below this the bar drains).
+//   • 21 taps/sec fills the bar in 10s.
+// Solve:  17*g = decay  AND  21*g - decay = 0.1
+//         → 4g = 0.1  → g = 0.025,  decay = 0.425.
+const TEMPO_GAIN_PER_TAP  = 0.025;
+const TEMPO_DECAY_PER_SEC = 0.425;
 const TEMPO_RATE_WINDOW_MS = 1000;
 const SADNESS_DELAY_MS = 5000;
 
