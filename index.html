@@ -321,6 +321,8 @@
   <div class="hud hud-top">
     <div id="score" class="chip">Score: 0</div>
     <div id="explodeCount" class="chip">Explosions: 0</div>
+    <!-- TEMP: diagnostic chip to see tap registration / tempo math on Android. -->
+    <div id="debugChip" class="chip" style="color:#2EE6FF;font-size:11px;line-height:1.35;text-align:left;white-space:pre;">debug</div>
   </div>
   <div id="motivation"></div>
   <span id="buildHash" aria-label="Build commit"></span>
@@ -1812,7 +1814,27 @@ function triggerCheatPenalty() {
 // Flip this to `true` to re-enable v5.1 detection + penalty.
 const ANTICHEAT_ENABLED = false;
 
+// TEMP debug counters for Android tap investigation
+let __dbgTaps = 0;
+let __dbgLastMs = 0;
+let __dbgLastInterval = 0;
+let __dbgLastEvent = '-';
+const __dbgEl = document.getElementById('debugChip');
+function __dbgUpdate() {
+  if (!__dbgEl) return;
+  __dbgEl.textContent =
+    'taps: ' + __dbgTaps +
+    '\nlast ev: ' + __dbgLastEvent +
+    '\nΔms: ' + __dbgLastInterval +
+    '\ntempo: ' + state.tempo.toFixed(3);
+}
+setInterval(__dbgUpdate, 100);
+
 function onGooseTap(x, y) {
+  const __now = performance.now();
+  __dbgLastInterval = __dbgLastMs ? Math.round(__now - __dbgLastMs) : 0;
+  __dbgLastMs = __now;
+  __dbgTaps++;
   if (state.exploding) return;
   const now = performance.now();
   if (ANTICHEAT_ENABLED) {
@@ -1922,6 +1944,7 @@ function inputToLocal(clientX, clientY) {
 
 cv.addEventListener('touchstart', (e) => {
   e.preventDefault();
+  __dbgLastEvent = 'touch(' + e.changedTouches.length + ')';
   for (const t of e.changedTouches) {
     const p = inputToLocal(t.clientX, t.clientY);
     onGooseTap(p.x, p.y);
@@ -1931,6 +1954,7 @@ cv.addEventListener('touchstart', (e) => {
 cv.addEventListener('mousedown', (e) => {
   // Skip if the browser also fires touch events for this interaction
   if (e.sourceCapabilities && e.sourceCapabilities.firesTouchEvents) return;
+  __dbgLastEvent = 'mouse';
   const p = inputToLocal(e.clientX, e.clientY);
   onGooseTap(p.x, p.y);
 });
