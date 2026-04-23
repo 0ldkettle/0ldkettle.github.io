@@ -692,12 +692,21 @@ const feathers = [];
 const ripples  = [];
 
 class Spark {
+  // mode: false = gentle drift (used by +1 fly trail), true = burst,
+  //       'contained' = small tap-burst that stays near the tap point.
   constructor(x, y, color, burst) {
     this.x = x; this.y = y;
     this.color    = color;
     this.rotation = Math.random() * Math.PI * 2;
     this.t = 0;
-    if (burst) {
+    if (burst === 'contained') {
+      const a  = Math.random() * Math.PI * 2;
+      const sp = 60 + Math.random() * 70;
+      this.vx   = Math.cos(a) * sp;
+      this.vy   = Math.sin(a) * sp;
+      this.size = 3 + Math.random() * 2;
+      this.life = 0.35 + Math.random() * 0.15;
+    } else if (burst) {
       const a  = Math.random() * Math.PI * 2;
       const sp = 180 + Math.random() * 240;
       this.vx   = Math.cos(a) * sp;
@@ -725,14 +734,15 @@ class Feather {
   constructor(x, y) {
     this.x = x; this.y = y;
     const a  = Math.random() * Math.PI * 2;
-    const sp = 260 + Math.random() * 220;
+    // Tighter spread: feathers stay near the tap point and fade fast.
+    const sp = 90 + Math.random() * 80;
     this.vx       = Math.cos(a) * sp;
-    this.vy       = Math.sin(a) * sp - 120;
+    this.vy       = Math.sin(a) * sp - 40;
     this.rotation = Math.random() * Math.PI * 2;
     this.rotSpeed = (Math.random() - 0.5) * 12;
-    this.w        = 14 + Math.random() * 8;
-    this.h        = 22 + Math.random() * 10;
-    this.life     = 0.7 + Math.random() * 0.35;
+    this.w        = 10 + Math.random() * 6;
+    this.h        = 16 + Math.random() * 8;
+    this.life     = 0.45 + Math.random() * 0.2;
     this.t        = 0;
   }
   update(dt) {
@@ -746,7 +756,8 @@ class Feather {
 }
 
 class Ripple {
-  constructor(x, y, sR = 30, eR = 260, life = 0.55) {
+  // Smaller default ripple: starts tiny, expands only ~70px, fades fast.
+  constructor(x, y, sR = 10, eR = 70, life = 0.32) {
     this.x = x; this.y = y;
     this.startR = sR; this.endR = eR;
     this.life = life; this.t = 0;
@@ -766,16 +777,19 @@ function spawnSpark(x, y) {
   sparks.push(new Spark(x, y, c, false));
 }
 function spawnBurst(x, y) {
-  const n = fx(14 + Math.floor(Math.random() * 6));
+  // Small confined burst used when a '+1' arrives at the score chip
+  // and after each tap effect. No more screen-sweeping arcs.
+  const n = fx(8 + Math.floor(Math.random() * 4));
   for (let i = 0; i < n; i++) {
-    sparks.push(new Spark(x, y, SPARK_COLORS[Math.floor(Math.random() * SPARK_COLORS.length)], true));
+    sparks.push(new Spark(x, y, SPARK_COLORS[Math.floor(Math.random() * SPARK_COLORS.length)], 'contained'));
   }
   ripples.push(new Ripple(x, y));
 }
 function spawnExplode(x, y) {
-  ripples.push(new Ripple(x, y, 40, 680, 0.85));
-  ripples.push(new Ripple(x, y, 20, 420, 0.55));
-  ripples.push(new Ripple(x, y, 10, 220, 0.35));
+  // Explosion ripples are bigger than tap ripples but still well contained.
+  ripples.push(new Ripple(x, y, 20, 220, 0.55));
+  ripples.push(new Ripple(x, y, 12, 150, 0.42));
+  ripples.push(new Ripple(x, y,  6,  90, 0.30));
   const n = fx(70 + Math.floor(Math.random() * 30));
   for (let i = 0; i < n; i++) {
     sparks.push(new Spark(x, y, SPARK_COLORS[Math.floor(Math.random() * SPARK_COLORS.length)], true));
@@ -785,7 +799,7 @@ function spawnExplode(x, y) {
 
   // Secondary burst after short delay
   setTimeout(() => {
-    ripples.push(new Ripple(x, y, 30, 500, 0.65));
+    ripples.push(new Ripple(x, y, 18, 180, 0.45));
     const n2 = fx(30 + Math.floor(Math.random() * 15));
     for (let i = 0; i < n2; i++) {
       const ox = x + (Math.random() - 0.5) * 120;
@@ -796,7 +810,7 @@ function spawnExplode(x, y) {
 
   // Third poof
   setTimeout(() => {
-    ripples.push(new Ripple(x, y, 20, 380, 0.55));
+    ripples.push(new Ripple(x, y, 12, 140, 0.38));
     const n3 = fx(20 + Math.floor(Math.random() * 10));
     for (let i = 0; i < n3; i++) {
       const ox = x + (Math.random() - 0.5) * 180;
