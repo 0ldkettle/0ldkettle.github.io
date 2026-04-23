@@ -579,10 +579,11 @@ let W = 0, H = 0, DPR = 1;
 // Coarse pointer = phones/tablets. iOS Safari hits a fill-rate wall when rendering
 // hundreds of particles at 3x DPR, so we cap DPR lower and halve particle counts.
 const IS_TOUCH_DEVICE = matchMedia('(hover: none) and (pointer: coarse)').matches;
-// Safari (including desktop Mac) has a significantly weaker Canvas 2D pipeline
-// than Chromium. Detect it and apply the same lite-fx budget as mobile.
+// Safari detection — used for the audio backend choice only. Safari's Canvas
+// pipeline is fine; the real perf issue was overlapping HTMLAudioElement.play() calls,
+// which are handled via Web Audio API below.
 const IS_SAFARI = /^((?!chrome|android|crios|fxios|edgios).)*safari/i.test(navigator.userAgent);
-const LITE_FX = IS_TOUCH_DEVICE || IS_SAFARI;
+const LITE_FX = IS_TOUCH_DEVICE;
 const FX_SCALE = LITE_FX ? 0.5 : 1;             // particle-count multiplier
 const DPR_CAP  = LITE_FX ? 2 : 2.5;
 // Hard caps on simultaneous particles — prevents accumulation at high tap rates.
@@ -625,44 +626,86 @@ gooseBody.onload      = oneLoaded; gooseBody.onerror      = oneLoaded;
 gooseBodyQuack.onload = oneLoaded; gooseBodyQuack.onerror = oneLoaded;
 
 // =============================================================
-// Audio — pooled instances for rapid overlapping quacks
+// Audio — Web Audio API for lag-free overlapping quacks on Safari/Chrome/Firefox.
+// HTMLAudioElement with rapid .play() calls stalls Safari's main thread badly;
+// AudioBufferSourceNode lets us fire hundreds of overlapping sounds cheaply.
+// Falls back to an HTMLAudioElement pool if Web Audio is unavailable.
 // =============================================================
 const AudioPool = (() => {
+  const AC = window.AudioContext || window.webkitAudioContext;
+  let actx = null;
+  let buffer = null;
+  let masterGain = null;
+
+  // HTMLAudioElement fallback pool (used only if Web Audio fails)
   const POOL_SIZE = 8;
-  const pool = [];
-  let loaded = false;
+  const htmlPool = [];
   for (let i = 0; i < POOL_SIZE; i++) {
     const a = new Audio('assets/honk.ogg');
     a.preload = 'auto';
     a.volume  = 0.85;
-    pool.push(a);
+    htmlPool.push(a);
   }
-  let idx = 0;
+  let htmlIdx = 0;
 
-  // Unlock audio context on first user gesture
-  function unlock() {
-    pool.forEach(a => {
-      a.play().then(() => { a.pause(); a.currentTime = 0; loaded = true; }).catch(() => {});
-    });
-    window.removeEventListener('touchstart', unlock);
-    window.removeEventListener('mousedown', unlock);
-    window.removeEventListener('keydown', unlock);
+  // Load the quack into an AudioBuffer up front.
+  if (AC) {
+    try {
+      actx = new AC();
+      masterGain = actx.createGain();
+      masterGain.gain.value = 0.85;
+      masterGain.connect(actx.destination);
+      fetch('assets/honk.ogg')
+        .then(r => r.arrayBuffer())
+        .then(ab => new Promise((res, rej) => actx.decodeAudioData(ab, res, rej)))
+        .then(buf => { buffer = buf; })
+        .catch(() => { /* fall back to HTMLAudio */ });
+    } catch(_) { actx = null; }
   }
-  window.addEventListener('touchstart', unlock, { once: false, passive: true });
-  window.addEventListener('mousedown',  unlock, { once: false });
-  window.addEventListener('keydown',    unlock, { once: false });
+
+  // Web Audio contexts start suspended until a user gesture on most browsers.
+  function resumeCtx() {
+    if (actx && actx.state === 'suspended') {
+      actx.resume().catch(() => {});
+    }
+    // Also prime the HTMLAudio fallback once so it's ready if needed.
+    if (!htmlPool[0].__primed) {
+      htmlPool.forEach(a => {
+        a.play().then(() => { a.pause(); a.currentTime = 0; a.__primed = true; }).catch(() => {});
+      });
+    }
+  }
+  window.addEventListener('touchstart', resumeCtx, { passive: true });
+  window.addEventListener('mousedown',  resumeCtx);
+  window.addEventListener('keydown',    resumeCtx);
+
+  function playWebAudio() {
+    if (!actx || !buffer) return false;
+    try {
+      const src = actx.createBufferSource();
+      src.buffer = buffer;
+      // Slight pitch variation for natural quack feel
+      src.playbackRate.value = 0.97 + Math.random() * 0.06;
+      src.connect(masterGain);
+      src.start(0);
+      return true;
+    } catch(_) { return false; }
+  }
+
+  function playHtmlAudio() {
+    const a = htmlPool[htmlIdx];
+    htmlIdx = (htmlIdx + 1) % POOL_SIZE;
+    try {
+      a.currentTime = 0;
+      a.playbackRate = 0.97 + Math.random() * 0.06;
+      a.play().catch(() => {});
+    } catch(_) {}
+  }
 
   return {
     play() {
       if (state.muted) return;
-      const a = pool[idx];
-      idx = (idx + 1) % POOL_SIZE;
-      try {
-        a.currentTime = 0;
-        // Slight pitch variation for natural quack feel
-        a.playbackRate = 0.97 + Math.random() * 0.06;
-        a.play().catch(() => {});
-      } catch(_) {}
+      if (!playWebAudio()) playHtmlAudio();
     }
   };
 })();
