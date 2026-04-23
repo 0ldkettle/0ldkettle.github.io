@@ -6,7 +6,7 @@ The further you push, the smaller the goose gets, the redder the screen glows, a
 
 ## About this project
 
-> This game was created entirely by an AI agent, without human code authorship. All game logic, art direction, anti-cheat algorithm, and this README were generated autonomously. The original Android version was ported to the web by the same AI. Use at your own amusement.
+> This game was created entirely by an AI agent, without human code authorship. All game logic, art direction, anti-cheat algorithm, and this README were generated autonomously. Use at your own amusement.
 
 ## Features
 
