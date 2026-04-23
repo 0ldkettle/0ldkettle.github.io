@@ -756,8 +756,8 @@ class Feather {
 }
 
 class Ripple {
-  // Smaller default ripple: starts tiny, expands only ~70px, fades fast.
-  constructor(x, y, sR = 10, eR = 70, life = 0.32) {
+  // Smaller default ripple: starts tiny, expands only ~35px, fades fast.
+  constructor(x, y, sR = 5, eR = 35, life = 0.32) {
     this.x = x; this.y = y;
     this.startR = sR; this.endR = eR;
     this.life = life; this.t = 0;
@@ -787,9 +787,9 @@ function spawnBurst(x, y) {
 }
 function spawnExplode(x, y) {
   // Explosion ripples are bigger than tap ripples but still well contained.
-  ripples.push(new Ripple(x, y, 20, 220, 0.55));
-  ripples.push(new Ripple(x, y, 12, 150, 0.42));
-  ripples.push(new Ripple(x, y,  6,  90, 0.30));
+  ripples.push(new Ripple(x, y, 10, 110, 0.55));
+  ripples.push(new Ripple(x, y,  6,  75, 0.42));
+  ripples.push(new Ripple(x, y,  3,  45, 0.30));
   const n = fx(70 + Math.floor(Math.random() * 30));
   for (let i = 0; i < n; i++) {
     sparks.push(new Spark(x, y, SPARK_COLORS[Math.floor(Math.random() * SPARK_COLORS.length)], true));
@@ -799,7 +799,7 @@ function spawnExplode(x, y) {
 
   // Secondary burst after short delay
   setTimeout(() => {
-    ripples.push(new Ripple(x, y, 18, 180, 0.45));
+    ripples.push(new Ripple(x, y, 9, 90, 0.45));
     const n2 = fx(30 + Math.floor(Math.random() * 15));
     for (let i = 0; i < n2; i++) {
       const ox = x + (Math.random() - 0.5) * 120;
@@ -810,7 +810,7 @@ function spawnExplode(x, y) {
 
   // Third poof
   setTimeout(() => {
-    ripples.push(new Ripple(x, y, 12, 140, 0.38));
+    ripples.push(new Ripple(x, y, 6, 70, 0.38));
     const n3 = fx(20 + Math.floor(Math.random() * 10));
     for (let i = 0; i < n3; i++) {
       const ox = x + (Math.random() - 0.5) * 180;
