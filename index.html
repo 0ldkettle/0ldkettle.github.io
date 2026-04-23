@@ -256,6 +256,27 @@
   }
   #muteBtn { font-size: 15px; }
 
+  /* Long-press feedback: fill ring grows during hold, flashes on fire. */
+  #langBtn::before, #styleBtn::before, #muteBtn::before {
+    content: '';
+    position: absolute;
+    inset: -2px;
+    border-radius: 12px;
+    border: 2px solid var(--neon-cyan);
+    opacity: 0;
+    transform: scale(0.92);
+    transition: opacity .12s ease-out, transform .55s ease-out;
+    pointer-events: none;
+  }
+  #langBtn.holding::before, #styleBtn.holding::before, #muteBtn.holding::before {
+    opacity: 0.9;
+    transform: scale(1.08);
+  }
+  #langBtn.fired, #styleBtn.fired, #muteBtn.fired {
+    background: var(--neon-cyan);
+    color: #000;
+  }
+
   /* Build hash — small, low-contrast, unobtrusive in the bottom-left */
   #buildHash {
     position: absolute;
@@ -1940,19 +1961,25 @@ creditsDialog.addEventListener('click', (e) => {
   if (e.target === creditsDialog) creditsDialog.classList.remove('show');
 });
 
-// Long-press attach helper — binds start/cancel across touch and mouse.
-// onFire runs when the press reaches the threshold; if it fires, the next
-// synthetic click on the element is suppressed so the normal button action
-// (e.g. toggle mute) doesn't also trigger.
+// Long-press attach helper — fires onFire after `ms` of sustained press,
+// and SWALLOWS the regular click so the button only activates on long-press.
+// Adds a CSS class "holding" during the press for visual feedback.
 function attachLongPress(el, onFire, ms = 550) {
   let timer = null;
-  let fired = false;
-  const start = () => {
-    fired = false;
+  const start = (e) => {
     clearTimeout(timer);
-    timer = setTimeout(() => { fired = true; onFire(); }, ms);
+    el.classList.add('holding');
+    timer = setTimeout(() => {
+      el.classList.remove('holding');
+      el.classList.add('fired');
+      setTimeout(() => el.classList.remove('fired'), 220);
+      onFire();
+    }, ms);
   };
-  const cancel = () => clearTimeout(timer);
+  const cancel = () => {
+    clearTimeout(timer);
+    el.classList.remove('holding');
+  };
   el.addEventListener('touchstart',  start,  { passive: true });
   el.addEventListener('touchend',    cancel);
   el.addEventListener('touchcancel', cancel);
@@ -1960,15 +1987,13 @@ function attachLongPress(el, onFire, ms = 550) {
   el.addEventListener('mousedown',   start);
   el.addEventListener('mouseup',     cancel);
   el.addEventListener('mouseleave',  cancel);
-  // Swallow the click that follows a long-press so it doesn't also
-  // toggle mute or trigger any other default click handler.
+  // Short clicks do nothing — only long-press activates.
   el.addEventListener('click', (e) => {
-    if (fired) {
-      e.stopImmediatePropagation();
-      e.preventDefault();
-      fired = false;
-    }
+    e.stopImmediatePropagation();
+    e.preventDefault();
   }, true);
+  // Suppress the iOS context menu that can appear on long-press.
+  el.addEventListener('contextmenu', (e) => e.preventDefault());
 }
 
 // =============================================================
@@ -1993,7 +2018,8 @@ function applyLanguage(lang) {
   state.lastMotivationTier = -1;
 }
 
-langBtn.addEventListener('click', () => {
+// Long-press (not a normal tap) toggles language. Prevents accidental clicks.
+attachLongPress(langBtn, () => {
   applyLanguage(currentLang === 'en' ? 'ru' : 'en');
 });
 
@@ -2009,7 +2035,8 @@ function applyGooseStyle(style) {
   Store.set('goose_style', String(state.gooseStyle));
   styleBtn.textContent = state.gooseStyle === 1 ? 'SVG' : 'PNG';
 }
-styleBtn.addEventListener('click', () => {
+// Long-press toggles goose style.
+attachLongPress(styleBtn, () => {
   applyGooseStyle(state.gooseStyle === 1 ? 0 : 1);
 });
 applyGooseStyle(state.gooseStyle);
@@ -2023,15 +2050,20 @@ function applyMuted(muted) {
   Store.set('muted', state.muted ? '1' : '0');
   muteBtn.textContent = state.muted ? '🔇' : '🔊';
 }
-muteBtn.addEventListener('click', () => {
+// Long-press toggles mute.
+attachLongPress(muteBtn, () => {
   applyMuted(!state.muted);
 });
 applyMuted(state.muted);
 
-// Long-press on the mute button opens the credits/about dialog.
-attachLongPress(muteBtn, () => {
-  creditsDialog.classList.add('show');
-});
+// Long-press on the build hash opens the credits/about dialog.
+const buildHashEl = document.getElementById('buildHash');
+if (buildHashEl) {
+  buildHashEl.style.pointerEvents = 'auto';
+  attachLongPress(buildHashEl, () => {
+    creditsDialog.classList.add('show');
+  });
+}
 
 // =============================================================
 // Sadness timer — goose looks sad when ignored
