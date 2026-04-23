@@ -692,16 +692,23 @@ const AudioPool = (() => {
   let buffer = null;
   let masterGain = null;
 
-  // HTMLAudioElement fallback pool (used only if Web Audio fails)
+  // HTMLAudioElement fallback — created lazily ONLY if Web Audio fails.
+  // Previously we eagerly primed 8 elements on the first user gesture,
+  // which stalls Safari's main thread on the first tap / mute click.
   const POOL_SIZE = 8;
-  const htmlPool = [];
-  for (let i = 0; i < POOL_SIZE; i++) {
-    const a = new Audio('assets/honk.ogg');
-    a.preload = 'auto';
-    a.volume  = 0.85;
-    htmlPool.push(a);
-  }
+  let htmlPool = null;
   let htmlIdx = 0;
+  function ensureHtmlPool() {
+    if (htmlPool) return htmlPool;
+    htmlPool = [];
+    for (let i = 0; i < POOL_SIZE; i++) {
+      const a = new Audio('assets/honk.ogg');
+      a.preload = 'auto';
+      a.volume  = 0.85;
+      htmlPool.push(a);
+    }
+    return htmlPool;
+  }
 
   // Load the quack into an AudioBuffer up front.
   if (AC) {
@@ -719,15 +726,10 @@ const AudioPool = (() => {
   }
 
   // Web Audio contexts start suspended until a user gesture on most browsers.
+  // Just resume — do NOT prime HTML audio here (that stalls Safari).
   function resumeCtx() {
     if (actx && actx.state === 'suspended') {
       actx.resume().catch(() => {});
-    }
-    // Also prime the HTMLAudio fallback once so it's ready if needed.
-    if (!htmlPool[0].__primed) {
-      htmlPool.forEach(a => {
-        a.play().then(() => { a.pause(); a.currentTime = 0; a.__primed = true; }).catch(() => {});
-      });
     }
   }
   window.addEventListener('touchstart', resumeCtx, { passive: true });
@@ -748,7 +750,8 @@ const AudioPool = (() => {
   }
 
   function playHtmlAudio() {
-    const a = htmlPool[htmlIdx];
+    const pool = ensureHtmlPool();
+    const a = pool[htmlIdx];
     htmlIdx = (htmlIdx + 1) % POOL_SIZE;
     try {
       a.currentTime = 0;
