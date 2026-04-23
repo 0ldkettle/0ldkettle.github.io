@@ -1617,13 +1617,19 @@ function triggerCheatPenalty() {
 // =============================================================
 // Main tap handler
 // =============================================================
+// Anti-cheat can be toggled off without removing the detection code.
+// Flip this to `true` to re-enable v5.1 detection + penalty.
+const ANTICHEAT_ENABLED = false;
+
 function onGooseTap(x, y) {
   if (state.exploding) return;
   const now = performance.now();
-  if (now < state.cheatPenaltyUntil) return;
-  if (registerTapForCheatCheck(now, x, y)) {
-    triggerCheatPenalty();
-    return;
+  if (ANTICHEAT_ENABLED) {
+    if (now < state.cheatPenaltyUntil) return;
+    if (registerTapForCheatCheck(now, x, y)) {
+      triggerCheatPenalty();
+      return;
+    }
   }
   state.pendingScore++;
   AudioPool.play();
