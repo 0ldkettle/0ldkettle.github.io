@@ -1,7 +1,7 @@
 // Service Worker for Goose Clicker PWA.
 // Minimal cache-first strategy so the app works offline and passes the
 // Chrome installability check ("installed service worker that controls page").
-const CACHE = 'goose-clicker-v16';
+const CACHE = 'goose-clicker-v17';
 const ASSETS = [
   './',
   './index.html',
@@ -38,13 +38,20 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   const req = event.request;
   if (req.method !== 'GET') return;
+  // Always bypass cache for version.txt so the displayed hash matches
+  // the currently deployed commit, not a stale cached one.
+  const url = new URL(req.url);
+  if (url.pathname.endsWith('/version.txt')) {
+    event.respondWith(fetch(req).catch(() => new Response('', { status: 200 })));
+    return;
+  }
   event.respondWith(
     caches.match(req).then((cached) => {
       if (cached) return cached;
       return fetch(req)
         .then((res) => {
           // Only cache successful same-origin GETs
-          if (res.ok && new URL(req.url).origin === self.location.origin) {
+          if (res.ok && url.origin === self.location.origin) {
             const clone = res.clone();
             caches.open(CACHE).then((cache) => cache.put(req, clone));
           }
