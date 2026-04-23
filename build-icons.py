@@ -78,10 +78,15 @@ def place_goose(bg: Image.Image, goose_ratio: float) -> Image.Image:
     return bg
 
 
-def build(size: int, goose_ratio: float, out: str) -> None:
+def build(size: int, goose_ratio: float, out: str, flatten: bool = False) -> None:
     img = gradient_bg(size)
     add_dot_grid(img)
     place_goose(img, goose_ratio)
+    if flatten:
+        # iOS home-screen icons must be opaque. Flatten RGBA -> RGB on BG_MID.
+        bg = Image.new("RGB", img.size, BG_MID[:3])
+        bg.paste(img, (0, 0), img)
+        img = bg
     img.save(HERE / out, "PNG", optimize=True)
     print(f"wrote {out} ({size}x{size})")
 
@@ -94,8 +99,13 @@ build(512, 0.78, "icon-512.png")
 # Maskable spec requires critical content inside the inner 80% circle/square.
 build(512, 0.60, "icon-maskable-512.png")
 
-# iOS home screen: 180x180, iOS rounds corners automatically.
-build(180, 0.78, "apple-touch-icon.png")
+# iOS home screen: iOS rounds corners and adds a mask; icons must be opaque.
+# Generate the canonical 180x180 plus common fallback sizes referenced by Safari.
+build(180, 0.78, "apple-touch-icon.png", flatten=True)
+build(180, 0.78, "apple-touch-icon-180.png", flatten=True)
+build(167, 0.78, "apple-touch-icon-167.png", flatten=True)
+build(152, 0.78, "apple-touch-icon-152.png", flatten=True)
+build(120, 0.78, "apple-touch-icon-120.png", flatten=True)
 
 # Favicon
 build(32, 0.82, "favicon.png")
