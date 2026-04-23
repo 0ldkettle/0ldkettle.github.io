@@ -36,17 +36,18 @@
     --ink: #fff;
   }
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-  /* html fills the FULL physical screen (including the home-indicator area
-     on iPhone PWAs). Solid-color base + gradient on top. iOS PWA can
-     drop `background-attachment:fixed` and leave the safe-area strip
-     white, so we paint a solid dark color first and layer the gradient
-     as a normal background — guarantees a correct fallback. */
+  /* html fills the FULL physical screen (including the iPhone home-
+     indicator safe-area). iOS PWA does not paint background-image
+     reliably under the safe-area, so we keep html a SOLID color equal
+     to the BOTTOM of the gradient. The gradient lives on #stage only,
+     and because the stage ends exactly where the home-indicator strip
+     begins, the bottom of the gradient (#080217) blends seamlessly
+     into the html color below it — no visible seam. */
   html {
     margin: 0; padding: 0;
     width: 100%;
     height: 100%;
-    background-color: #080217;
-    background-image: linear-gradient(180deg, #3a1685 0%, #1a0a3c 55%, #080217 100%);
+    background: #080217;
     overflow: hidden;
   }
   body {
