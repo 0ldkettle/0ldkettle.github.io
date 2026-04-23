@@ -3,6 +3,9 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="theme-color" content="#1a0a3c">
@@ -2054,10 +2057,39 @@ applyTempoScale();
 applyHeat();
 persist();
 
-// PWA: register service worker for installability and offline support
+// PWA: register service worker for installability and offline support.
+// Also reloads the page automatically when a new SW takes control —
+// critical for iOS home-screen PWAs which otherwise never see updates.
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('sw.js').catch(() => {});
+    navigator.serviceWorker.register('sw.js').then((reg) => {
+      // Check for updates on every launch and whenever the tab regains focus.
+      try { reg.update(); } catch(_) {}
+      window.addEventListener('focus', () => { try { reg.update(); } catch(_) {} });
+
+      // When a new SW is installed and waiting, activate it immediately.
+      function promptUpdate(sw) {
+        if (!sw) return;
+        if (sw.state === 'installed' && navigator.serviceWorker.controller) {
+          sw.postMessage('SKIP_WAITING');
+        }
+        sw.addEventListener('statechange', () => {
+          if (sw.state === 'installed' && navigator.serviceWorker.controller) {
+            sw.postMessage('SKIP_WAITING');
+          }
+        });
+      }
+      promptUpdate(reg.waiting);
+      reg.addEventListener('updatefound', () => promptUpdate(reg.installing));
+    }).catch(() => {});
+
+    // Reload exactly once when a new SW takes over (after skipWaiting).
+    let reloading = false;
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (reloading) return;
+      reloading = true;
+      window.location.reload();
+    });
   });
 }
 
