@@ -2,112 +2,86 @@
 """
 Build PWA icons for Goose Clicker.
 
+Icon style: Apple squircle, soft peachy-yellow gradient, cute white goose.
+Source: icon-1024.png (AI-generated, pre-composed).
+
 Generates:
-  - icon-192.png        (any purpose, 192x192, safe zone ~90%)
-  - icon-512.png        (any purpose, 512x512, safe zone ~90%)
-  - icon-maskable-512.png (maskable, 512x512, safe zone 80% — per W3C maskable spec)
-  - apple-touch-icon.png (180x180, rounded-corner-free, iOS applies its own mask)
-  - favicon.png         (32x32)
-
-Background: the game's signature purple gradient.
-Foreground: the existing assets/goose.png centered.
-
-Requires Pillow. Falls back gracefully if missing.
+  - icon-192.png         (any purpose, 192x192)
+  - icon-512.png         (any purpose, 512x512)
+  - icon-maskable-512.png (maskable, peach gradient extended to full bleed)
+  - apple-touch-icon.png  (180x180, opaque — iOS applies its own mask)
+  - apple-touch-icon-{120,152,167,180}.png (Safari fallbacks)
+  - favicon.png (32x32)
 """
-from PIL import Image, ImageDraw
+from PIL import Image
 from pathlib import Path
 
 HERE = Path(__file__).parent
-ASSETS = HERE / "assets"
-GOOSE = Image.open(ASSETS / "goose.png").convert("RGBA")
+SOURCE = HERE / "icon-1024.png"
 
-# Brand colors pulled from index.html
-BG_TOP = (58, 22, 133, 255)   # #3a1685
-BG_MID = (26, 10, 60, 255)    # #1a0a3c
-BG_BOT = (8, 2, 23, 255)      # #080217
+# Peach gradient used for maskable full-bleed background.
+# Matches the AI-generated squircle background tone.
+PEACH_TOP = (255, 224, 178, 255)   # light warm peach
+PEACH_BOT = (255, 196, 140, 255)   # slightly deeper peach
 
 
-def gradient_bg(size: int) -> Image.Image:
-    """Vertical gradient matching the in-game sky."""
-    img = Image.new("RGBA", (size, size), BG_MID)
+def load_source(size: int) -> Image.Image:
+    img = Image.open(SOURCE).convert("RGBA")
+    if img.size != (size, size):
+        img = img.resize((size, size), Image.LANCZOS)
+    return img
+
+
+def peach_bg(size: int) -> Image.Image:
+    img = Image.new("RGBA", (size, size), PEACH_TOP)
     px = img.load()
     for y in range(size):
-        t = y / (size - 1)
-        # Two-stop interpolation: TOP -> MID at 55%, MID -> BOT at 100%
-        if t < 0.55:
-            u = t / 0.55
-            r = int(BG_TOP[0] + (BG_MID[0] - BG_TOP[0]) * u)
-            g = int(BG_TOP[1] + (BG_MID[1] - BG_TOP[1]) * u)
-            b = int(BG_TOP[2] + (BG_MID[2] - BG_TOP[2]) * u)
-        else:
-            u = (t - 0.55) / 0.45
-            r = int(BG_MID[0] + (BG_BOT[0] - BG_MID[0]) * u)
-            g = int(BG_MID[1] + (BG_BOT[1] - BG_MID[1]) * u)
-            b = int(BG_BOT[2] + (BG_BOT[2] - BG_MID[2]) * u)
+        t = y / max(1, size - 1)
+        r = int(PEACH_TOP[0] + (PEACH_BOT[0] - PEACH_TOP[0]) * t)
+        g = int(PEACH_TOP[1] + (PEACH_BOT[1] - PEACH_TOP[1]) * t)
+        b = int(PEACH_TOP[2] + (PEACH_BOT[2] - PEACH_TOP[2]) * t)
         for x in range(size):
             px[x, y] = (r, g, b, 255)
     return img
 
 
-def add_dot_grid(img: Image.Image) -> None:
-    """Subtle dot grid for character, matching the in-game background."""
-    draw = ImageDraw.Draw(img)
-    w, h = img.size
-    step = max(8, w // 24)
-    for y in range(step // 2, h, step):
-        for x in range(step // 2, w, step):
-            draw.point((x, y), fill=(255, 255, 255, 30))
-
-
-def place_goose(bg: Image.Image, goose_ratio: float) -> Image.Image:
-    """Paste the goose centered, scaled to `goose_ratio` of canvas width."""
-    size = bg.size[0]
-    goose = GOOSE.copy()
-    target_w = int(size * goose_ratio)
-    # Preserve aspect
-    gw, gh = goose.size
-    scale = target_w / gw
-    goose = goose.resize(
-        (int(gw * scale), int(gh * scale)),
-        Image.LANCZOS,
-    )
-    x = (size - goose.size[0]) // 2
-    # Slightly below center — gives the head visual weight
-    y = (size - goose.size[1]) // 2 + int(size * 0.02)
-    bg.paste(goose, (x, y), goose)
-    return bg
-
-
-def build(size: int, goose_ratio: float, out: str, flatten: bool = False) -> None:
-    img = gradient_bg(size)
-    add_dot_grid(img)
-    place_goose(img, goose_ratio)
+def build_standard(size: int, out: str, flatten: bool = False) -> None:
+    """Standard icon: just resize the composed squircle source."""
+    img = load_source(size)
     if flatten:
-        # iOS home-screen icons must be opaque. Flatten RGBA -> RGB on BG_MID.
-        bg = Image.new("RGB", img.size, BG_MID[:3])
+        bg = Image.new("RGB", img.size, PEACH_TOP[:3])
         bg.paste(img, (0, 0), img)
         img = bg
     img.save(HERE / out, "PNG", optimize=True)
     print(f"wrote {out} ({size}x{size})")
 
 
-# Standard icons: goose fills ~78% of canvas (safe zone for any purpose)
-build(192, 0.78, "icon-192.png")
-build(512, 0.78, "icon-512.png")
+def build_maskable(size: int, out: str) -> None:
+    """Maskable: peach gradient full-bleed, goose scaled into 60% safe zone."""
+    bg = peach_bg(size)
+    src = load_source(1024)
+    # Scale source down so its visual content fits inside the 60% safe zone.
+    inner = int(size * 0.60)
+    src_small = src.resize((inner, inner), Image.LANCZOS)
+    off = (size - inner) // 2
+    bg.paste(src_small, (off, off), src_small)
+    bg.save(HERE / out, "PNG", optimize=True)
+    print(f"wrote {out} ({size}x{size})")
 
-# Maskable: goose fills ~60% so the mask (inner 80%) never clips the goose.
-# Maskable spec requires critical content inside the inner 80% circle/square.
-build(512, 0.60, "icon-maskable-512.png")
 
-# iOS home screen: iOS rounds corners and adds a mask; icons must be opaque.
-# Generate the canonical 180x180 plus common fallback sizes referenced by Safari.
-build(180, 0.78, "apple-touch-icon.png", flatten=True)
-build(180, 0.78, "apple-touch-icon-180.png", flatten=True)
-build(167, 0.78, "apple-touch-icon-167.png", flatten=True)
-build(152, 0.78, "apple-touch-icon-152.png", flatten=True)
-build(120, 0.78, "apple-touch-icon-120.png", flatten=True)
+# Any-purpose icons
+build_standard(192, "icon-192.png")
+build_standard(512, "icon-512.png")
+
+# Maskable
+build_maskable(512, "icon-maskable-512.png")
+
+# iOS home screen (opaque, iOS rounds corners itself)
+for s in (120, 152, 167, 180):
+    build_standard(s, f"apple-touch-icon-{s}.png", flatten=True)
+build_standard(180, "apple-touch-icon.png", flatten=True)
 
 # Favicon
-build(32, 0.82, "favicon.png")
+build_standard(32, "favicon.png")
 
 print("done")
