@@ -1,7 +1,5 @@
 <!doctype html>
-<!-- Inline background on <html> so the very first paint (before CSS parses)
-     is already dark-purple, never a white flash. -->
-<html lang="en" style="background:#080217;">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
@@ -10,10 +8,7 @@
 <meta http-equiv="Expires" content="0">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<!-- Match the BOTTOM of the gradient so the iOS home-indicator strip
-     is dark, not white. -->
-<meta name="theme-color" content="#080217">
-<style id="boot-bg">html{background:#080217;}body{background:#080217;}</style>
+<meta name="theme-color" content="#1a0a3c">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Goose">
 <link rel="manifest" href="manifest.webmanifest">
@@ -36,25 +31,20 @@
     --ink: #fff;
   }
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-  /* html fills the FULL physical screen (including the iPhone home-
-     indicator safe-area). iOS PWA does not paint background-image
-     reliably under the safe-area, so we keep html a SOLID color equal
-     to the BOTTOM of the gradient. The gradient lives on #stage only,
-     and because the stage ends exactly where the home-indicator strip
-     begins, the bottom of the gradient (#080217) blends seamlessly
-     into the html color below it — no visible seam. */
-  html {
+  html, body {
     margin: 0; padding: 0;
     width: 100%;
-    height: 100%;
+    /* iOS PWA fill fix: --app-height is set from JS to window.innerHeight,
+       which in iOS standalone returns the true screen height (including
+       the home-indicator strip). Fallbacks for layout engines that don't
+       run the JS yet. */
+    height: 100vh;
+    height: -webkit-fill-available;
+    height: 100dvh;
+    height: var(--app-height, 100dvh);
+    /* Solid dark-purple so any safe-area around the stage tints with the
+       game palette instead of pure black. */
     background: #080217;
-    overflow: hidden;
-  }
-  body {
-    margin: 0; padding: 0;
-    width: 100%;
-    height: 100%;
-    background: transparent;
     overscroll-behavior: none;
     user-select: none;
     -webkit-user-select: none;
@@ -65,22 +55,19 @@
     touch-action: none;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, Arial, sans-serif;
     color: var(--ink);
-    overflow: hidden;
   }
   #stage {
-    /* Extend the stage PAST the iOS home-indicator safe-area so the
-       gradient (and the spike decoration painted on the canvas near the
-       bottom of the stage) reach the true physical edge of the screen.
-       Without this, iOS PWA clips the stage at innerHeight (above the
-       home-indicator) and the ~68px strip below shows html's solid
-       color, which looks like a dark band under the spikes. */
     position: fixed;
-    top: 0;
+    inset: 0;
     left: 50%;
     transform: translateX(-50%);
     width: 100%;
     max-width: 560px;
-    height: calc(100% + env(safe-area-inset-bottom));
+    /* Pin to the real viewport bottom; --app-height tracks window.innerHeight. */
+    height: 100vh;
+    height: -webkit-fill-available;
+    height: 100dvh;
+    height: var(--app-height, 100dvh);
     overflow: hidden;
     background: linear-gradient(180deg, #3a1685 0%, #1a0a3c 55%, #080217 100%);
   }
@@ -329,8 +316,6 @@
 </style>
 </head>
 <body>
-<!-- Probe element for reading env(safe-area-inset-bottom) from JS. -->
-<div id="safeProbe" style="position:fixed;left:0;bottom:0;width:0;height:0;padding-bottom:env(safe-area-inset-bottom);pointer-events:none;visibility:hidden;"></div>
 <div id="stage">
   <canvas id="cv"></canvas>
   <div class="hud hud-top">
@@ -362,10 +347,45 @@
 // 100vh/100dvh can under-report on iOS Safari standalone, leaving a black
 // strip at the bottom. window.innerHeight is the reliable source.
 // =============================================================
-// html/body/#stage use `position:fixed; inset:0` and html carries the
-// same gradient as the stage — so the iOS PWA safe-area strip under the
-// stage (the home-indicator region) stays on palette instead of showing
-// a black bar. No JS viewport sizing needed anymore.
+(function setAppHeight() {
+  // Track the largest height we've ever seen — iOS standalone can report
+  // a shorter innerHeight in transient states (just after SW reload, during
+  // the unlock animation). Keeping the max prevents a brief short value
+  // from leaving a permanent black strip at the bottom.
+  let maxH = 0;
+  function apply() {
+    let h = window.innerHeight;
+    if (window.visualViewport && window.visualViewport.height > h) {
+      h = window.visualViewport.height;
+    }
+    if (h > maxH) maxH = h;
+    document.documentElement.style.setProperty('--app-height', maxH + 'px');
+  }
+  // Reset the max and re-sample many times over ~2.5s. Useful on unlock,
+  // on orientation change, and after the PWA is resumed — iOS layout often
+  // needs several frames to produce the final innerHeight.
+  function reprobe() {
+    maxH = 0;
+    apply();
+    [50, 150, 300, 600, 1200, 2500].forEach(d => setTimeout(apply, d));
+  }
+  apply();
+  // Initial settle retries.
+  [50, 150, 300, 600, 1200, 2500].forEach(d => setTimeout(apply, d));
+  window.addEventListener('resize', apply);
+  window.addEventListener('orientationchange', reprobe);
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener('resize', apply);
+  }
+  // pageshow fires when returning from bfcache or when the PWA is resumed.
+  window.addEventListener('pageshow', reprobe);
+  // focus also fires after unlock — some iOS versions skip pageshow but hit focus.
+  window.addEventListener('focus', reprobe);
+  // When the tab becomes visible again (e.g. after unlock), re-probe fully.
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) reprobe();
+  });
+})();
 
 // =============================================================
 // Internationalization (i18n) — EN is the default language
@@ -673,25 +693,12 @@ const MAX_FEATHERS = LITE_FX ?  60 : 120;
 const MAX_RIPPLES  = LITE_FX ?  16 :  28;
 const MAX_FLY_PLUS = LITE_FX ?   6 :  10;
 
-// Safe-area inset at the bottom (iOS home-indicator). The stage extends
-// BELOW the safe-area so the gradient reaches the physical screen edge
-// and no dark strip appears. Everything that should sit on the "logical"
-// bottom edge (spikes, ground line) must render at H - SAFE_BOTTOM.
-let SAFE_BOTTOM = 0;
-function readSafeBottom() {
-  // Read a tiny probe element that uses env(safe-area-inset-bottom).
-  const probe = document.getElementById('safeProbe');
-  if (!probe) return 0;
-  const v = parseFloat(getComputedStyle(probe).paddingBottom) || 0;
-  return Math.round(v);
-}
 function resize() {
   DPR = Math.min(window.devicePixelRatio || 1, DPR_CAP);
   const stage = document.getElementById('stage');
   const r = stage.getBoundingClientRect();
   W = Math.round(r.width);
   H = Math.round(r.height);
-  SAFE_BOTTOM = readSafeBottom();
   cv.width  = Math.round(W * DPR);
   cv.height = Math.round(H * DPR);
   cv.style.width  = W + 'px';
@@ -1032,13 +1039,11 @@ function drawBackground(dt) {
   ctx.fillStyle = grad;
   ctx.fillRect(0, groundTop - 80, W, 80);
 
-  // Cyan baseline along the LOGICAL bottom (above iOS home-indicator).
-  const logicalBottom = H - SAFE_BOTTOM;
+  // Cyan baseline along the very bottom
   ctx.fillStyle = '#00E5FF';
-  ctx.fillRect(0, logicalBottom - 2, W, 2);
+  ctx.fillRect(0, groundTop - 2, W, 2);
 
-  // Scrolling pink spikes sitting on the LOGICAL bottom edge (above
-  // the iOS home-indicator safe-area).
+  // Scrolling pink spikes sitting on the bottom edge
   const baseW = 34, hSpike = 26, spacing = 46;
   const offset = -((state.bgScroll * 0.55) % spacing);
   ctx.fillStyle   = '#FF3E7F';
@@ -1046,9 +1051,9 @@ function drawBackground(dt) {
   ctx.lineWidth   = 1.5;
   for (let x = offset - spacing; x < W + spacing; x += spacing) {
     ctx.beginPath();
-    ctx.moveTo(x - baseW / 2, logicalBottom);
-    ctx.lineTo(x + baseW / 2, logicalBottom);
-    ctx.lineTo(x, logicalBottom - hSpike);
+    ctx.moveTo(x - baseW / 2, groundTop);
+    ctx.lineTo(x + baseW / 2, groundTop);
+    ctx.lineTo(x, groundTop - hSpike);
     ctx.closePath();
     ctx.fill();
     ctx.stroke();
