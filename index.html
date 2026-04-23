@@ -783,7 +783,7 @@ function spawnBurst(x, y) {
   for (let i = 0; i < n; i++) {
     sparks.push(new Spark(x, y, SPARK_COLORS[Math.floor(Math.random() * SPARK_COLORS.length)], 'contained'));
   }
-  ripples.push(new Ripple(x, y));
+  // No ripple here — the score-chip burst should be sparks only.
 }
 function spawnExplode(x, y) {
   // Explosion ripples are bigger than tap ripples but still well contained.
