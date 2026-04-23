@@ -551,12 +551,12 @@ const EXPLODE_BONUS  = 500;
 // total taps/second is what counts.
 //
 // Targets:
-//   • 17 taps/sec = exact break-even (below this the bar drains).
+//   • 20 taps/sec = exact break-even (below this the bar drains).
 //   • 21 taps/sec fills the bar in 10s.
-// Solve:  17*g = decay  AND  21*g - decay = 0.1
-//         → 4g = 0.1  → g = 0.025,  decay = 0.425.
-const TEMPO_GAIN_PER_TAP  = 0.025;
-const TEMPO_DECAY_PER_SEC = 0.425;
+// Solve:  20*g = decay  AND  21*g - decay = 0.1
+//         → g = 0.1,  decay = 2.0.
+const TEMPO_GAIN_PER_TAP  = 0.1;
+const TEMPO_DECAY_PER_SEC = 2.0;
 const TEMPO_RATE_WINDOW_MS = 1000;
 const SADNESS_DELAY_MS = 5000;
 
