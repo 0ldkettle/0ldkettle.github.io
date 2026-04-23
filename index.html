@@ -34,15 +34,17 @@
   html, body {
     margin: 0; padding: 0;
     width: 100%;
-    /* iOS PWA fill fix: use dynamic viewport height so the page extends
-       to the very bottom of the screen under the home indicator, with
-       graceful fallbacks for older WebKit. */
+    /* iOS PWA fill fix: --app-height is set from JS to window.innerHeight,
+       which in iOS standalone returns the true screen height (including
+       the home-indicator strip). Fallbacks for layout engines that don't
+       run the JS yet. */
     height: 100vh;
     height: -webkit-fill-available;
     height: 100dvh;
-    /* Full-screen gradient so nothing behind #stage ever shows as black. */
-    background: #080217 linear-gradient(180deg, #3a1685 0%, #1a0a3c 55%, #080217 100%) no-repeat;
-    background-attachment: fixed;
+    height: var(--app-height, 100dvh);
+    /* Solid dark-purple so any safe-area around the stage tints with the
+       game palette instead of pure black. */
+    background: #080217;
     overscroll-behavior: none;
     user-select: none;
     -webkit-user-select: none;
@@ -52,16 +54,16 @@
   }
   #stage {
     position: fixed;
+    inset: 0;
     left: 50%;
-    top: 0;
     transform: translateX(-50%);
     width: 100%;
     max-width: 560px;
-    /* Match the body height strategy so #stage fills the full viewport
-       including the iOS home indicator / dynamic-island safe areas. */
+    /* Pin to the real viewport bottom; --app-height tracks window.innerHeight. */
     height: 100vh;
     height: -webkit-fill-available;
     height: 100dvh;
+    height: var(--app-height, 100dvh);
     overflow: hidden;
     background: linear-gradient(180deg, #3a1685 0%, #1a0a3c 55%, #080217 100%);
   }
@@ -328,6 +330,24 @@
 
 <script>
 'use strict';
+
+// =============================================================
+// iOS PWA viewport fill — sets --app-height to the true viewport height.
+// 100vh/100dvh can under-report on iOS Safari standalone, leaving a black
+// strip at the bottom. window.innerHeight is the reliable source.
+// =============================================================
+(function setAppHeight() {
+  function apply() {
+    document.documentElement.style.setProperty('--app-height', window.innerHeight + 'px');
+  }
+  apply();
+  window.addEventListener('resize', apply);
+  window.addEventListener('orientationchange', () => setTimeout(apply, 150));
+  // visualViewport fires when the URL bar shows/hides, keyboard toggles, etc.
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener('resize', apply);
+  }
+})();
 
 // =============================================================
 // Internationalization (i18n) — EN is the default language
