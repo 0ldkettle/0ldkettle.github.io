@@ -32,16 +32,13 @@
   }
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
   html, body {
+    /* Pin the document itself to the viewport. `position:fixed; inset:0`
+       lets the browser own the exact viewport rect — no more fighting
+       with vh/dvh/innerHeight-based `height` which drifts on iOS PWA
+       and leaves a permanent black strip at the bottom. */
+    position: fixed;
+    inset: 0;
     margin: 0; padding: 0;
-    width: 100%;
-    /* iOS PWA fill fix: --app-height is set from JS to window.innerHeight,
-       which in iOS standalone returns the true screen height (including
-       the home-indicator strip). Fallbacks for layout engines that don't
-       run the JS yet. */
-    height: 100vh;
-    height: -webkit-fill-available;
-    height: 100dvh;
-    height: var(--app-height, 100dvh);
     /* Solid dark-purple so any safe-area around the stage tints with the
        game palette instead of pure black. */
     background: #080217;
@@ -56,18 +53,15 @@
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, Arial, sans-serif;
     color: var(--ink);
   }
+  html { height: 100%; }
   #stage {
+    /* inset-based sizing only — no explicit height that can drift. */
     position: fixed;
-    inset: 0;
+    top: 0; bottom: 0;
     left: 50%;
     transform: translateX(-50%);
     width: 100%;
     max-width: 560px;
-    /* Pin to the real viewport bottom; --app-height tracks window.innerHeight. */
-    height: 100vh;
-    height: -webkit-fill-available;
-    height: 100dvh;
-    height: var(--app-height, 100dvh);
     overflow: hidden;
     background: linear-gradient(180deg, #3a1685 0%, #1a0a3c 55%, #080217 100%);
   }
@@ -349,59 +343,23 @@
 // 100vh/100dvh can under-report on iOS Safari standalone, leaving a black
 // strip at the bottom. window.innerHeight is the reliable source.
 // =============================================================
-(function setAppHeight() {
-  // Track the largest height we've ever seen — iOS standalone can report
-  // a shorter innerHeight in transient states (just after SW reload, during
-  // the unlock animation). Keeping the max prevents a brief short value
-  // from leaving a permanent black strip at the bottom.
-  let maxH = 0;
-  function apply() {
-    let h = window.innerHeight;
-    if (window.visualViewport && window.visualViewport.height > h) {
-      h = window.visualViewport.height;
-    }
-    if (h > maxH) maxH = h;
-    document.documentElement.style.setProperty('--app-height', maxH + 'px');
-  }
-  // Reset the max and re-sample many times over ~2.5s. Useful on unlock,
-  // on orientation change, and after the PWA is resumed — iOS layout often
-  // needs several frames to produce the final innerHeight.
-  function reprobe() {
-    maxH = 0;
-    apply();
-    [50, 150, 300, 600, 1200, 2500].forEach(d => setTimeout(apply, d));
-  }
-  apply();
-  // Initial settle retries.
-  [50, 150, 300, 600, 1200, 2500].forEach(d => setTimeout(apply, d));
-  // TEMP: on-screen viewport diagnostic
-  setInterval(() => {
-    const el = document.getElementById('vpDbg');
-    if (!el) return;
-    const vvh = window.visualViewport ? Math.round(window.visualViewport.height) : '-';
-    const vvo = window.visualViewport ? Math.round(window.visualViewport.offsetTop) : '-';
-    el.textContent =
-      'inner: ' + window.innerHeight +
-      '\nvv h: ' + vvh +
-      '\nvv ot: ' + vvo +
-      '\nmaxH: ' + maxH +
-      '\ndocEl: ' + document.documentElement.clientHeight +
-      '\nscreen: ' + screen.height;
-  }, 200);
-  window.addEventListener('resize', apply);
-  window.addEventListener('orientationchange', reprobe);
-  if (window.visualViewport) {
-    window.visualViewport.addEventListener('resize', apply);
-  }
-  // pageshow fires when returning from bfcache or when the PWA is resumed.
-  window.addEventListener('pageshow', reprobe);
-  // focus also fires after unlock — some iOS versions skip pageshow but hit focus.
-  window.addEventListener('focus', reprobe);
-  // When the tab becomes visible again (e.g. after unlock), re-probe fully.
-  document.addEventListener('visibilitychange', () => {
-    if (!document.hidden) reprobe();
-  });
-})();
+// Old --app-height JS sizing was removed. html/body/#stage now use
+// `position:fixed; inset:0` which lets the browser own the viewport rect
+// directly — no drift, no black strip. The TEMP diagnostic below shows
+// the real stage size vs viewport metrics.
+setInterval(() => {
+  const el = document.getElementById('vpDbg');
+  if (!el) return;
+  const vvh = window.visualViewport ? Math.round(window.visualViewport.height) : '-';
+  const stageEl = document.getElementById('stage');
+  const sh = stageEl ? Math.round(stageEl.getBoundingClientRect().height) : '-';
+  el.textContent =
+    'inner: ' + window.innerHeight +
+    '\nvv h: ' + vvh +
+    '\nstage: ' + sh +
+    '\ndocEl: ' + document.documentElement.clientHeight +
+    '\nscreen: ' + screen.height;
+}, 200);
 
 // =============================================================
 // Internationalization (i18n) — EN is the default language
