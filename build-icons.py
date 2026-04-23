@@ -21,8 +21,8 @@ SOURCE = HERE / "icon-1024.png"
 
 # Peach gradient used for maskable full-bleed background.
 # Matches the AI-generated squircle background tone.
-PEACH_TOP = (255, 224, 178, 255)   # light warm peach
-PEACH_BOT = (255, 196, 140, 255)   # slightly deeper peach
+PEACH_TOP = (74, 91, 168, 255)    # twilight indigo (top)
+PEACH_BOT = (232, 155, 184, 255)  # warm pink (bottom)
 
 
 def load_source(size: int) -> Image.Image:
