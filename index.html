@@ -1,5 +1,7 @@
 <!doctype html>
-<html lang="en">
+<!-- Inline background on <html> so the very first paint (before CSS parses)
+     is already dark-purple, never a white flash. -->
+<html lang="en" style="background:#080217;">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
@@ -8,7 +10,10 @@
 <meta http-equiv="Expires" content="0">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="theme-color" content="#1a0a3c">
+<!-- Match the BOTTOM of the gradient so the iOS home-indicator strip
+     is dark, not white. -->
+<meta name="theme-color" content="#080217">
+<style id="boot-bg">html{background:#080217;}body{background:#080217;}</style>
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Goose">
 <link rel="manifest" href="manifest.webmanifest">
@@ -32,15 +37,16 @@
   }
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
   /* html fills the FULL physical screen (including the home-indicator area
-     on iPhone PWAs). We paint the same gradient on html itself so that
-     the iOS safe-area strip under the stage blends in instead of showing
-     black bars. */
+     on iPhone PWAs). Solid-color base + gradient on top. iOS PWA can
+     drop `background-attachment:fixed` and leave the safe-area strip
+     white, so we paint a solid dark color first and layer the gradient
+     as a normal background — guarantees a correct fallback. */
   html {
     margin: 0; padding: 0;
     width: 100%;
     height: 100%;
-    background: linear-gradient(180deg, #3a1685 0%, #1a0a3c 55%, #080217 100%);
-    background-attachment: fixed;
+    background-color: #080217;
+    background-image: linear-gradient(180deg, #3a1685 0%, #1a0a3c 55%, #080217 100%);
     overflow: hidden;
   }
   body {
