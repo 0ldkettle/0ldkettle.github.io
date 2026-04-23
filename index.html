@@ -342,51 +342,42 @@
 // strip at the bottom. window.innerHeight is the reliable source.
 // =============================================================
 (function setAppHeight() {
-  // Track the largest height we've ever seen. iOS standalone sometimes
-  // reports a shorter innerHeight immediately after reload/SW update, then
-  // settles to the true height a few frames later. We keep the max so a
-  // transient short value never "wins" and leaves a black strip.
+  // Track the largest height we've ever seen — iOS standalone can report
+  // a shorter innerHeight in transient states (just after SW reload, during
+  // the unlock animation). Keeping the max prevents a brief short value
+  // from leaving a permanent black strip at the bottom.
   let maxH = 0;
   function apply() {
-    const h = window.innerHeight;
-    if (h > maxH) maxH = h;
-    // Also track visualViewport height if larger (rare, but defensive).
-    if (window.visualViewport && window.visualViewport.height > maxH) {
-      maxH = window.visualViewport.height;
+    let h = window.innerHeight;
+    if (window.visualViewport && window.visualViewport.height > h) {
+      h = window.visualViewport.height;
     }
+    if (h > maxH) maxH = h;
     document.documentElement.style.setProperty('--app-height', maxH + 'px');
   }
+  // Reset the max and re-sample many times over ~2.5s. Useful on unlock,
+  // on orientation change, and after the PWA is resumed — iOS layout often
+  // needs several frames to produce the final innerHeight.
+  function reprobe() {
+    maxH = 0;
+    apply();
+    [50, 150, 300, 600, 1200, 2500].forEach(d => setTimeout(apply, d));
+  }
   apply();
-  // Retry several times after load — iOS PWA often reports a stale height
-  // immediately after a SW-triggered reload, then grows by ~30–80px once
-  // the home-indicator strip is accounted for.
+  // Initial settle retries.
   [50, 150, 300, 600, 1200, 2500].forEach(d => setTimeout(apply, d));
   window.addEventListener('resize', apply);
-  window.addEventListener('orientationchange', () => {
-    // Orientation flip changes the screen — reset max so we don't clamp
-    // to the old portrait height in landscape (or vice versa).
-    maxH = 0;
-    setTimeout(apply, 150);
-    setTimeout(apply, 500);
-  });
-  // visualViewport fires when the URL bar shows/hides, keyboard toggles, etc.
+  window.addEventListener('orientationchange', reprobe);
   if (window.visualViewport) {
     window.visualViewport.addEventListener('resize', apply);
   }
-  // pageshow fires when returning from bfcache or when the PWA is resumed
-  // from background — a prime moment for the layout to finally settle.
-  window.addEventListener('pageshow', () => {
-    maxH = 0;
-    apply();
-    setTimeout(apply, 100);
-    setTimeout(apply, 400);
-  });
-  // Becoming visible again after being hidden also warrants a recheck.
+  // pageshow fires when returning from bfcache or when the PWA is resumed.
+  window.addEventListener('pageshow', reprobe);
+  // focus also fires after unlock — some iOS versions skip pageshow but hit focus.
+  window.addEventListener('focus', reprobe);
+  // When the tab becomes visible again (e.g. after unlock), re-probe fully.
   document.addEventListener('visibilitychange', () => {
-    if (!document.hidden) {
-      apply();
-      setTimeout(apply, 200);
-    }
+    if (!document.hidden) reprobe();
   });
 })();
 
