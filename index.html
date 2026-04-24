@@ -629,6 +629,10 @@ const state = {
   bgScroll: 0,
   cubeAngle: 0,
   pulsePhase: 0,
+  // Floating background cubes — lazily initialised on first frame
+  // (so we know canvas dimensions). Each cube drifts with its own
+  // velocity + angular speed and wraps around the screen edges.
+  bgCubes: null,
   // Sadness timer handle
   sadnessTimeout: null,
   // Timestamp (ms) of the last tap — used by the speed-sensitive tempo curve.
@@ -1031,24 +1035,38 @@ function drawBackground(dt) {
   }
   ctx.stroke();
 
-  // Floating rotating cyan cubes drifting across the whole stage.
-  // y is in [0..1] of the full canvas height so they populate everything.
-  const cubes = [
-    { x: 0.12, y: 0.08, size: 26, speed:  1.0 },
-    { x: 0.55, y: 0.15, size: 34, speed: -1.3 },
-    { x: 0.85, y: 0.22, size: 22, speed:  0.7 },
-    { x: 0.30, y: 0.34, size: 20, speed: -0.9 },
-    { x: 0.70, y: 0.42, size: 28, speed:  1.1 },
-    { x: 0.18, y: 0.52, size: 24, speed: -0.6 },
-    { x: 0.48, y: 0.60, size: 18, speed:  1.4 },
-    { x: 0.82, y: 0.66, size: 30, speed: -1.0 },
-    { x: 0.22, y: 0.78, size: 22, speed:  0.8 },
-    { x: 0.62, y: 0.84, size: 26, speed: -1.2 },
-  ];
-  for (const c of cubes) {
+  // Floating rotating cyan cubes drifting freely across the whole stage.
+  // Each cube has its own velocity and spin; they wrap around the edges.
+  if (!state.bgCubes) {
+    state.bgCubes = [];
+    for (let i = 0; i < 12; i++) {
+      const ang = Math.random() * Math.PI * 2;
+      const speed = 20 + Math.random() * 60; // 20..80 px/s
+      state.bgCubes.push({
+        x: Math.random() * W,
+        y: Math.random() * H,
+        vx: Math.cos(ang) * speed,
+        vy: Math.sin(ang) * speed,
+        size: 18 + Math.random() * 16,         // 18..34 px
+        rot: Math.random() * Math.PI * 2,
+        spin: (Math.random() * 2 - 1) * 1.5,   // ±1.5 rad/s
+      });
+    }
+  }
+  for (const c of state.bgCubes) {
+    c.x += c.vx * dt;
+    c.y += c.vy * dt;
+    c.rot += c.spin * dt;
+    // Wrap around edges (include the cube's half-size so it doesn't pop).
+    const pad = c.size;
+    if (c.x < -pad)     c.x = W + pad;
+    else if (c.x > W + pad) c.x = -pad;
+    if (c.y < -pad)     c.y = H + pad;
+    else if (c.y > H + pad) c.y = -pad;
+
     ctx.save();
-    ctx.translate(c.x * W, c.y * H);
-    ctx.rotate(state.cubeAngle * c.speed);
+    ctx.translate(c.x, c.y);
+    ctx.rotate(c.rot);
     const half = c.size / 2;
     ctx.fillStyle   = '#2EE6FF';
     ctx.fillRect(-half, -half, c.size, c.size);
