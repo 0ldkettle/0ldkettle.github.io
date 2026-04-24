@@ -344,7 +344,7 @@
   </div>
   <div id="motivation"></div>
   <span id="buildHash" aria-label="Build commit"></span>
-  <span id="tapRate" aria-label="Taps per second">0 tps</span>
+  <span id="tapRate" aria-label="Taps per second">0 / 0 tps</span>
   <div id="controls">
     <button id="langBtn">EN</button>
     <button id="styleBtn">SVG</button>
@@ -2074,6 +2074,8 @@ applyMuted(state.muted);
 
 // Long-press on the build hash opens the credits/about dialog.
 const tapRateEl = document.getElementById('tapRate');
+// Persisted all-time max tap rate.
+let maxTps = parseInt(Store.get('goose_max_tps') || '0', 10) || 0;
 const buildHashEl = document.getElementById('buildHash');
 if (buildHashEl) {
   buildHashEl.style.pointerEvents = 'auto';
@@ -2108,9 +2110,14 @@ function frame(now) {
     while (drop < tt.length && tt[drop] < cutoff) drop++;
     if (drop > 0) tt.splice(0, drop);
     const tapsPerSec = tt.length; // window is exactly 1s
-    // Update the on-screen rate meter.
+    // Track and persist the all-time maximum rate.
+    if (tapsPerSec > maxTps) {
+      maxTps = tapsPerSec;
+      Store.set('goose_max_tps', String(maxTps));
+    }
+    // Update the on-screen rate meter: current / max.
     if (tapRateEl) {
-      tapRateEl.textContent = tapsPerSec + ' tps';
+      tapRateEl.textContent = tapsPerSec + ' / ' + maxTps + ' tps';
       tapRateEl.classList.toggle('hot', tapsPerSec >= 21);
     }
     const delta = tapsPerSec * TEMPO_GAIN_PER_TAP - TEMPO_DECAY_PER_SEC;
