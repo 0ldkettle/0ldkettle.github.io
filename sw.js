@@ -4,13 +4,14 @@
 //     when online, with cache fallback for offline use.
 //   - Cache-first for static assets (images, audio, manifest).
 //   - Always-fresh for version.txt so the displayed build hash matches reality.
-const CACHE = 'goose-clicker-v62';
+const CACHE = 'goose-clicker-v63';
 const ASSETS = [
   './',
   './index.html',
   './manifest.webmanifest',
   './icon-192.png',
   './icon-512.png',
+  './icon-maskable-192.png',
   './icon-maskable-512.png',
   './apple-touch-icon.png',
   './apple-touch-icon-120.png',
