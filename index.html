@@ -1011,6 +1011,34 @@ function spawnExplode(x, y) {
 }
 
 // =============================================================
+// Scare background cubes away from a tap point (fish-startle effect)
+// =============================================================
+function scareCubes(x, y) {
+  const cubes = state.bgCubes;
+  if (!cubes) return;
+  const RADIUS = 200;         // cubes within this many px react strongly
+  const MAX_IMPULSE = 520;    // peak scare velocity (px/s) at x=0 distance
+  for (const c of cubes) {
+    let dx = c.x - x;
+    let dy = c.y - y;
+    let dist = Math.hypot(dx, dy);
+    if (dist < 1) {
+      // Pick a random direction if the cube is right on the tap point
+      const a = Math.random() * Math.PI * 2;
+      dx = Math.cos(a); dy = Math.sin(a); dist = 1;
+    }
+    // Linear falloff: full impulse at the tap, zero past RADIUS.
+    const falloff = Math.max(0, 1 - dist / RADIUS);
+    if (falloff <= 0) continue;
+    const mag = MAX_IMPULSE * falloff;
+    c.sx += (dx / dist) * mag;
+    c.sy += (dy / dist) * mag;
+    // Flip spin to add a visual twitch of surprise.
+    c.spin = -c.spin + (Math.random() - 0.5) * 2;
+  }
+}
+
+// =============================================================
 // Draw: GD-style scrolling background
 // =============================================================
 function drawBackground(dt) {
@@ -1045,18 +1073,28 @@ function drawBackground(dt) {
       state.bgCubes.push({
         x: Math.random() * W,
         y: Math.random() * H,
+        // Calm drifting velocity (preserved even after a scare).
         vx: Math.cos(ang) * speed,
         vy: Math.sin(ang) * speed,
+        // Temporary "scared" velocity added on top — decays quickly.
+        sx: 0,
+        sy: 0,
         size: 18 + Math.random() * 16,         // 18..34 px
         rot: Math.random() * Math.PI * 2,
         spin: (Math.random() * 2 - 1) * 1.5,   // ±1.5 rad/s
       });
     }
   }
+  // Scare impulse decays exponentially — half-life ≈ 0.22s.
+  const scareDecay = Math.exp(-dt * 3.2);
   for (const c of state.bgCubes) {
-    c.x += c.vx * dt;
-    c.y += c.vy * dt;
-    c.rot += c.spin * dt;
+    c.x += (c.vx + c.sx) * dt;
+    c.y += (c.vy + c.sy) * dt;
+    c.sx *= scareDecay;
+    c.sy *= scareDecay;
+    // Scared cubes also spin harder while the impulse is strong.
+    const scareMag = Math.hypot(c.sx, c.sy);
+    c.rot += (c.spin + Math.sign(c.spin || 1) * scareMag * 0.02) * dt;
     // Wrap around edges (include the cube's half-size so it doesn't pop).
     const pad = c.size;
     if (c.x < -pad)     c.x = W + pad;
@@ -1889,6 +1927,7 @@ function onGooseTap(x, y) {
   }, 220);
 
   spawnTapFx(x, y);
+  scareCubes(x, y);
   vibrate(20);
   flyPointToScore(x, y);
 
