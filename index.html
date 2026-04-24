@@ -1241,9 +1241,19 @@ const SVG_PATH_BODY = _mkPath(p => {
   p.bezierCurveTo(98, 318,   78, 295,  70, 270);
 });
 const SVG_PATH_TAIL = _mkPath(p => {
-  p.moveTo(65, 265);
-  p.quadraticCurveTo(48, 258, 40, 250);
-  p.quadraticCurveTo(52, 262, 58, 275);
+  // Three overlapping feathers fanning out back-left from the body.
+  // feather 1 (top)
+  p.moveTo(80, 202);
+  p.bezierCurveTo(50, 180, 22, 170, 14, 182);
+  p.bezierCurveTo(18, 200, 40, 215, 72, 218);
+  // feather 2 (middle)
+  p.moveTo(72, 218);
+  p.bezierCurveTo(42, 220, 18, 218, 10, 232);
+  p.bezierCurveTo(18, 248, 42, 252, 70, 246);
+  // feather 3 (bottom)
+  p.moveTo(70, 246);
+  p.bezierCurveTo(45, 254, 26, 262, 22, 275);
+  p.bezierCurveTo(32, 282, 52, 278, 70, 265);
 });
 const SVG_PATH_NECK = _mkPath(p => {
   p.moveTo(135, 185);
