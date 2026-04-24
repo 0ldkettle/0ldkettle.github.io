@@ -575,11 +575,11 @@ const EXPLODE_BONUS  = 500;
 // Multiple fingers still work: only the total rate in the 1s window
 // matters, not how you reach it.
 //
-// Tuning: at 28+ tps the bar fills in 10s (≈280 taps minimum);
+// Tuning: at 28+ tps the bar fills in ~9.1s (≈255 taps minimum);
 // from full the bar drains to 0 in 10s if you stop tapping.
 const TEMPO_DECAY_BELOW   = 22;   // below this, bar drops
 const TEMPO_GROW_AT       = 28;   // at/above this, bar grows
-const TEMPO_GROW_PER_SEC  = 0.1;  // 10 s from 0 → explode at sustained 28+ tps
+const TEMPO_GROW_PER_SEC  = 0.11; // ~9.1 s from 0 → explode at sustained 28+ tps
 const TEMPO_DECAY_PER_SEC = 0.1;  // 10 s from full → 0 if tps < 22
 const TEMPO_RATE_WINDOW_MS = 1000;
 const SADNESS_DELAY_MS = 5000;
