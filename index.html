@@ -420,7 +420,7 @@ const I18N = {
     explode_count_fmt: (n) => `Explosions: ${n}`,
     credits_title: 'About',
     credits_body:
-      'Goose Clicker v5.1 (web)\n\nSound: "Duck Quack" — qubodup\nhttps://freesound.org/s/442820/\nLicense: CC BY 4.0\nRemixed from "20130403_duck.04.wav" — dobroide (CC BY 3.0)\n\nGoose icon: AI-generated',
+      'Goose Clicker · build __BUILD__\n\nSound: "Duck Quack" — qubodup\nhttps://freesound.org/s/442820/\nLicense: CC BY 4.0\nRemixed from "20130403_duck.04.wav" — dobroide (CC BY 3.0)\n\nGoose icon: AI-generated',
     title_hint: 'long-press title for credits',
     cheat_warning: '✖ CHEATING DETECTED\nThe goose is offended!',
     praises: [
@@ -485,7 +485,7 @@ const I18N = {
     explode_count_fmt: (n) => `Взрывов: ${n}`,
     credits_title: 'О приложении',
     credits_body:
-      'Гусь-Кликер v5.1 (web)\n\nЗвук: «Duck Quack» — qubodup\nhttps://freesound.org/s/442820/\nЛицензия: CC BY 4.0\nРемикс звука «20130403_duck.04.wav» — dobroide (CC BY 3.0)\n\nИконка гуся: сгенерирована ИИ',
+      'Гусь-Кликер · сборка __BUILD__\n\nЗвук: «Duck Quack» — qubodup\nhttps://freesound.org/s/442820/\nЛицензия: CC BY 4.0\nРемикс звука «20130403_duck.04.wav» — dobroide (CC BY 3.0)\n\nИконка гуся: сгенерирована ИИ',
     title_hint: 'долгий тап — о приложении',
     cheat_warning: '✖ ЧИТЕРСТВО ОБНАРУЖЕНО\nГусь обижен!',
     praises: [
@@ -559,7 +559,7 @@ function t(key) {
 }
 
 // =============================================================
-// Gameplay mechanics constants (ported from MainActivity v5.1)
+// Gameplay mechanics constants
 // =============================================================
 const TEMPO_PER_TAP  = 0.0476;
 const TEMPO_EXPLODE  = 1.0;
@@ -1738,7 +1738,7 @@ function flashScreen() {
 }
 
 // =============================================================
-// Anti-cheat v5.1 — five detection signatures
+// Anti-cheat — five detection signatures
 // =============================================================
 function registerTapForCheatCheck(now, x, y) {
   if (state.lastTapTime > 0) {
@@ -1842,7 +1842,7 @@ function triggerCheatPenalty() {
 // Main tap handler
 // =============================================================
 // Anti-cheat can be toggled off without removing the detection code.
-// Flip this to `true` to re-enable v5.1 detection + penalty.
+// Flip this to `true` to re-enable detection + penalty.
 const ANTICHEAT_ENABLED = false;
 
 function onGooseTap(x, y) {
@@ -1969,7 +1969,9 @@ const creditsDialog = document.getElementById('credits');
 
 function renderCredits() {
   document.getElementById('creditsTitle').textContent = t('credits_title');
-  document.getElementById('creditsBody').textContent  = t('credits_body');
+  const hashEl = document.getElementById('buildHash');
+  const hash = (hashEl && hashEl.textContent && hashEl.textContent.trim()) || '…';
+  document.getElementById('creditsBody').textContent  = t('credits_body').replace('__BUILD__', hash);
 }
 renderCredits();
 
@@ -2291,7 +2293,11 @@ if ('serviceWorker' in navigator) {
     .then(r => r.ok ? r.text() : '')
     .then(txt => {
       const hash = (txt || '').trim().slice(0, 7);
-      if (hash) el.textContent = hash;
+      if (hash) {
+        el.textContent = hash;
+        // Re-render credits so the freshly-loaded hash shows up there too.
+        if (typeof renderCredits === 'function') renderCredits();
+      }
     })
     .catch(() => {});
 })();
