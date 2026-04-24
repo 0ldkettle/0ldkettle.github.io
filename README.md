@@ -42,6 +42,38 @@ Or just open `index.html` directly in a browser. No build step required.
 - **Long-press the title** ("Goose Clicker") to open the credits dialog.
 - **EN / RU button** (bottom-right corner) to switch language.
 
+## Tuning the Explosion
+
+The explosion difficulty is controlled by a **three-zone rate model** defined near the top of `index.html` (search for `Tempo model`). Each frame the game counts taps in a sliding 1-second window (`tapsPerSec`) and adjusts the 0–1 tempo bar based on which zone you're in:
+
+| Zone              | Condition                                         | Effect on tempo                       |
+| ----------------- | ------------------------------------------------- | ------------------------------------- |
+| **Drop**          | `tapsPerSec < TEMPO_DECAY_BELOW`                  | Falls at `TEMPO_DECAY_PER_SEC` / sec  |
+| **Hold (dead)**   | `TEMPO_DECAY_BELOW ≤ tapsPerSec < TEMPO_GROW_AT`  | Stays put                             |
+| **Grow**          | `tapsPerSec ≥ TEMPO_GROW_AT`                      | Rises at `TEMPO_GROW_PER_SEC` / sec   |
+
+The goose explodes when tempo reaches `TEMPO_EXPLODE = 1.0`.
+
+### Knobs
+
+- **`TEMPO_DECAY_BELOW`** — tps threshold below which the bar drains. Lower = more forgiving.
+- **`TEMPO_GROW_AT`** — tps threshold you must hit to make progress. Higher = harder.
+- **`TEMPO_GROW_PER_SEC`** — how fast the bar fills when in the grow zone. Minimum taps to explode from zero ≈ `TEMPO_GROW_AT / TEMPO_GROW_PER_SEC`.
+- **`TEMPO_DECAY_PER_SEC`** — how fast the bar drains when in the drop zone. Time from full to empty = `1 / TEMPO_DECAY_PER_SEC` seconds.
+- **`TEMPO_RATE_WINDOW_MS`** — sliding-window length for the tps count. Keep at `1000` unless you want sub-second responsiveness.
+
+The tap-rate chip at the bottom-right shows `current / all-time max` tps. **Long-press the chip** to reset the max. It turns pink when you're in the grow zone.
+
+### Example calibrations
+
+| Goal                          | `DECAY_BELOW` | `GROW_AT` | `GROW_PER_SEC` | Min taps to explode |
+| ----------------------------- | -------------:| ---------:| --------------:| -------------------:|
+| Relaxed                       | 10            | 15        | 0.15           | ≈100               |
+| Current (Apr 2026)            | 22            | 28        | 0.11           | ≈255               |
+| Brutal                        | 35            | 45        | 0.08           | ≈565               |
+
+After changing any of these, bump `CACHE` in `sw.js` (e.g. `v57` → `v58`) so PWA clients pick up the new build immediately.
+
 ## Anti-Cheat Notes
 
 Anti-cheat v5.1 monitors the last 12 tap intervals and positions and flags five patterns:
