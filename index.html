@@ -573,12 +573,12 @@ const EXPLODE_BONUS  = 500;
 // Multiple fingers still work: only the total rate in the 1s window
 // matters, not how you reach it.
 //
-// Tuning: at 30+ tps the bar fills in 10s (≈300 taps minimum);
+// Tuning: at 28+ tps the bar fills in 10s (≈280 taps minimum);
 // from full the bar drains to 0 in 10s if you stop tapping.
-const TEMPO_DECAY_BELOW   = 24;   // below this, bar drops
-const TEMPO_GROW_AT       = 30;   // at/above this, bar grows
-const TEMPO_GROW_PER_SEC  = 0.1;  // 10 s from 0 → explode at sustained 30+ tps
-const TEMPO_DECAY_PER_SEC = 0.1;  // 10 s from full → 0 if tps < 24
+const TEMPO_DECAY_BELOW   = 22;   // below this, bar drops
+const TEMPO_GROW_AT       = 28;   // at/above this, bar grows
+const TEMPO_GROW_PER_SEC  = 0.1;  // 10 s from 0 → explode at sustained 28+ tps
+const TEMPO_DECAY_PER_SEC = 0.1;  // 10 s from full → 0 if tps < 22
 const TEMPO_RATE_WINDOW_MS = 1000;
 const SADNESS_DELAY_MS = 5000;
 
@@ -2118,7 +2118,7 @@ function frame(now) {
     // Update the on-screen rate meter: current / max.
     if (tapRateEl) {
       tapRateEl.textContent = tapsPerSec + ' / ' + maxTps + ' tps';
-      tapRateEl.classList.toggle('hot', tapsPerSec >= 30);
+      tapRateEl.classList.toggle('hot', tapsPerSec >= 28);
     }
     let tempoRate = 0;
     if (tapsPerSec >= TEMPO_GROW_AT)         tempoRate =  TEMPO_GROW_PER_SEC;
