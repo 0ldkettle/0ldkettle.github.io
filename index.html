@@ -564,20 +564,21 @@ const TEMPO_EXPLODE  = 1.0;
 const MIN_SCALE      = 0.30;
 const EXPLODE_BONUS  = 500;
 
-// Tempo model (v2 — rate-based):
+// Tempo model (v3 — three-zone):
 // We count taps over a sliding 1-second window and compute tapsPerSec.
-// Tempo grows at `tapsPerSec * TEMPO_GAIN_PER_TAP` and decays at
-// `TEMPO_DECAY_PER_SEC`. This way it doesn't matter HOW you reach the
-// rate — 1 finger fast, 5 fingers slower, or 10 fingers at once. The
-// total taps/second is what counts.
+// Three zones:
+//   • tps <  TEMPO_DECAY_BELOW      → tempo drops at TEMPO_DECAY_PER_SEC
+//   • tps in [DECAY_BELOW .. GROW_AT) → tempo holds steady (dead zone)
+//   • tps >= TEMPO_GROW_AT           → tempo grows at TEMPO_GROW_PER_SEC
+// Multiple fingers still work: only the total rate in the 1s window
+// matters, not how you reach it.
 //
-// Targets:
-//   • 35 taps/sec = exact break-even (below this the bar drains).
-//   • 36 taps/sec fills the bar in 10s (≈360 taps minimum).
-// Solve:  35*g = decay  AND  36*g - decay = 0.1
-//         → g = 0.1,  decay = 3.5.
-const TEMPO_GAIN_PER_TAP  = 0.1;
-const TEMPO_DECAY_PER_SEC = 3.5;
+// Tuning: at 36+ tps the bar fills in 10s (≈360 taps minimum);
+// from full the bar drains to 0 in 10s if you stop tapping.
+const TEMPO_DECAY_BELOW   = 30;   // below this, bar drops
+const TEMPO_GROW_AT       = 36;   // at/above this, bar grows
+const TEMPO_GROW_PER_SEC  = 0.1;  // 10 s from 0 → explode at sustained 36+ tps
+const TEMPO_DECAY_PER_SEC = 0.1;  // 10 s from full → 0 if tps < 30
 const TEMPO_RATE_WINDOW_MS = 1000;
 const SADNESS_DELAY_MS = 5000;
 
@@ -2098,10 +2099,9 @@ function frame(now) {
   lastFrame   = now;
   const dt    = Math.min(0.05, dtRaw); // cap delta to avoid spiral-of-death
 
-  // Rate-based tempo. Trim the tap-time buffer to the 1s window, then:
-  //   tempȯ = tapsPerSec * TEMPO_GAIN_PER_TAP - TEMPO_DECAY_PER_SEC
-  // This way 5 fingers tapping 4/sec each behaves like 1 finger tapping
-  // 20/sec — only the total rate matters.
+  // Rate-based tempo (three-zone). Trim the tap buffer to the 1s window.
+  // Below DECAY_BELOW: drop. In [DECAY_BELOW..GROW_AT): hold. >=GROW_AT: grow.
+  // Multiple fingers still add up — only the total rate matters.
   if (!state.exploding) {
     const cutoff = now - TEMPO_RATE_WINDOW_MS;
     const tt = state.tapTimes;
@@ -2120,8 +2120,10 @@ function frame(now) {
       tapRateEl.textContent = tapsPerSec + ' / ' + maxTps + ' tps';
       tapRateEl.classList.toggle('hot', tapsPerSec >= 36);
     }
-    const delta = tapsPerSec * TEMPO_GAIN_PER_TAP - TEMPO_DECAY_PER_SEC;
-    state.tempo = Math.max(0, state.tempo + delta * dt);
+    let tempoRate = 0;
+    if (tapsPerSec >= TEMPO_GROW_AT)         tempoRate =  TEMPO_GROW_PER_SEC;
+    else if (tapsPerSec < TEMPO_DECAY_BELOW) tempoRate = -TEMPO_DECAY_PER_SEC;
+    state.tempo = Math.max(0, state.tempo + tempoRate * dt);
     if (state.tempo >= TEMPO_EXPLODE) {
       triggerExplode();
     } else {
