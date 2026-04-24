@@ -308,10 +308,12 @@
     font-size: 12px;
     font-weight: 700;
     letter-spacing: 0.5px;
-    pointer-events: none;
+    padding: 4px 6px;
+    touch-action: none;
+    -webkit-touch-callout: none;
     user-select: none;
   }
-  /* Red when at/above the explode rate (21+). */
+  /* Red when at/above the explode rate (28+). */
   #tapRate.hot {
     color: var(--neon-pink);
     text-shadow: 0 0 10px rgba(255,62,127,.75);
@@ -2077,6 +2079,21 @@ applyMuted(state.muted);
 const tapRateEl = document.getElementById('tapRate');
 // Persisted all-time max tap rate.
 let maxTps = parseInt(Store.get('goose_max_tps') || '0', 10) || 0;
+// Long-press on the tap-rate chip resets the all-time max.
+if (tapRateEl) {
+  tapRateEl.style.pointerEvents = 'auto';
+  tapRateEl.style.cursor = 'pointer';
+  attachLongPress(tapRateEl, () => {
+    maxTps = 0;
+    Store.set('goose_max_tps', '0');
+    if (tapRateEl) {
+      tapRateEl.textContent = '0 / 0 tps';
+      // brief flash so the user sees the reset
+      tapRateEl.classList.add('hot');
+      setTimeout(() => { tapRateEl.classList.remove('hot'); }, 200);
+    }
+  });
+}
 const buildHashEl = document.getElementById('buildHash');
 if (buildHashEl) {
   buildHashEl.style.pointerEvents = 'auto';
