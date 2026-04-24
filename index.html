@@ -1095,17 +1095,30 @@ function drawBackground(dt) {
     // Scared cubes also spin harder while the impulse is strong.
     const scareMag = Math.hypot(c.sx, c.sy);
     c.rot += (c.spin + Math.sign(c.spin || 1) * scareMag * 0.02) * dt;
-    // Wrap around edges (include the cube's half-size so it doesn't pop).
-    const pad = c.size;
-    if (c.x < -pad)     c.x = W + pad;
-    else if (c.x > W + pad) c.x = -pad;
-    if (c.y < -pad)     c.y = H + pad;
-    else if (c.y > H + pad) c.y = -pad;
+    // Bounce off screen edges (half-size keeps the whole cube on-screen).
+    const half = c.size / 2;
+    if (c.x < half) {
+      c.x = half;
+      if (c.vx < 0) c.vx = -c.vx;
+      if (c.sx < 0) c.sx = -c.sx;
+    } else if (c.x > W - half) {
+      c.x = W - half;
+      if (c.vx > 0) c.vx = -c.vx;
+      if (c.sx > 0) c.sx = -c.sx;
+    }
+    if (c.y < half) {
+      c.y = half;
+      if (c.vy < 0) c.vy = -c.vy;
+      if (c.sy < 0) c.sy = -c.sy;
+    } else if (c.y > H - half) {
+      c.y = H - half;
+      if (c.vy > 0) c.vy = -c.vy;
+      if (c.sy > 0) c.sy = -c.sy;
+    }
 
     ctx.save();
     ctx.translate(c.x, c.y);
     ctx.rotate(c.rot);
-    const half = c.size / 2;
     ctx.fillStyle   = '#2EE6FF';
     ctx.fillRect(-half, -half, c.size, c.size);
     ctx.strokeStyle = '#fff'; ctx.lineWidth = 2;
