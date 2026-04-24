@@ -572,12 +572,12 @@ const EXPLODE_BONUS  = 500;
 // total taps/second is what counts.
 //
 // Targets:
-//   • 40 taps/sec = exact break-even (below this the bar drains).
-//   • 41 taps/sec fills the bar in 10s (≈410 taps minimum).
-// Solve:  40*g = decay  AND  41*g - decay = 0.1
-//         → g = 0.1,  decay = 4.0.
+//   • 35 taps/sec = exact break-even (below this the bar drains).
+//   • 36 taps/sec fills the bar in 10s (≈360 taps minimum).
+// Solve:  35*g = decay  AND  36*g - decay = 0.1
+//         → g = 0.1,  decay = 3.5.
 const TEMPO_GAIN_PER_TAP  = 0.1;
-const TEMPO_DECAY_PER_SEC = 4.0;
+const TEMPO_DECAY_PER_SEC = 3.5;
 const TEMPO_RATE_WINDOW_MS = 1000;
 const SADNESS_DELAY_MS = 5000;
 
@@ -2118,7 +2118,7 @@ function frame(now) {
     // Update the on-screen rate meter: current / max.
     if (tapRateEl) {
       tapRateEl.textContent = tapsPerSec + ' / ' + maxTps + ' tps';
-      tapRateEl.classList.toggle('hot', tapsPerSec >= 41);
+      tapRateEl.classList.toggle('hot', tapsPerSec >= 36);
     }
     const delta = tapsPerSec * TEMPO_GAIN_PER_TAP - TEMPO_DECAY_PER_SEC;
     state.tempo = Math.max(0, state.tempo + delta * dt);
