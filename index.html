@@ -1024,6 +1024,15 @@ const state = {
   // Nervous left/right sway accumulator while descending.
   gooseSwayT: 0,
   gooseSwayX: 0,
+  // Shake-driven physics: position offset from rest + velocity. The goose is
+  // pushed by device motion, slides until it hits the canvas edges, bounces.
+  gooseBumpX: 0,
+  gooseBumpY: 0,
+  gooseVX: 0,
+  gooseVY: 0,
+  // Last wall hit: timestamp for cooldown + 'flash' visual cue.
+  lastBumpAt: -Infinity,
+  bumpFlash: 0,
   gooseAlpha: 1,
   gooseHidden: false,
   // Respawn pop-in: 0..1 animation progress, 1 = complete
@@ -1808,6 +1817,132 @@ function gooseDescentTarget() {
   return Math.max(0, targetCenterY - baseY);
 }
 
+// =============================================================
+// Shake-driven goose physics: applies an impulse from device motion,
+// integrates velocity with friction, and bounces off the canvas edges
+// playing a synthesized 'bonk' on each wall hit.
+// =============================================================
+const BUMP_FRICTION_PER_SEC = 3.4;     // velocity decay (higher = stops faster)
+const BUMP_RESTITUTION       = 0.55;   // bounciness on wall hit
+const BUMP_MIN_SPEED_FOR_FX  = 80;     // px/sec; below this no sound on wall hit
+const BUMP_SOUND_COOLDOWN_MS = 90;     // anti-spam between bonk sounds
+
+// Synthesize a short low-pitched 'bonk' via Web Audio. Reuses the AudioPool
+// AudioContext if available; falls back to silence on browsers without WA.
+function playBonk(intensity) {
+  if (state.muted) return;
+  const actx = (typeof AudioPool !== 'undefined' && AudioPool.ctx) || null;
+  // Try to reuse the same context the quack uses; fall back to a fresh one.
+  const C = actx || (window._bonkCtx || (window._bonkCtx = (function(){
+    const AC = window.AudioContext || window.webkitAudioContext;
+    return AC ? new AC() : null;
+  })()));
+  if (!C) return;
+  try {
+    if (C.state === 'suspended') C.resume();
+    const t0 = C.currentTime;
+    // Punchy thud: low sine + click via short noise burst.
+    const osc = C.createOscillator();
+    const og  = C.createGain();
+    const vol = Math.min(1, 0.18 + intensity * 0.55);
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(160, t0);
+    osc.frequency.exponentialRampToValueAtTime(70, t0 + 0.08);
+    og.gain.setValueAtTime(vol, t0);
+    og.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.18);
+    osc.connect(og); og.connect(C.destination);
+    osc.start(t0); osc.stop(t0 + 0.20);
+    // Click transient
+    const noiseLen = 0.025;
+    const buf = C.createBuffer(1, Math.ceil(C.sampleRate * noiseLen), C.sampleRate);
+    const d = buf.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / d.length);
+    const ns = C.createBufferSource(); ns.buffer = buf;
+    const ng = C.createGain(); ng.gain.value = Math.min(0.5, 0.12 + intensity * 0.4);
+    ns.connect(ng); ng.connect(C.destination);
+    ns.start(t0);
+  } catch(_) {}
+}
+
+// Apply an instantaneous velocity kick to the goose. Called from the
+// devicemotion handler when motion magnitude exceeds the bump threshold.
+function applyShakeImpulse(dx, dy, dz) {
+  if (state.exploding || state.gooseHidden) return;
+  // Scale + amplify so a normal phone shake produces visible motion.
+  const k = 18;
+  state.gooseVX += -dx * k;        // negative: shaking phone right pushes goose left (inertia)
+  state.gooseVY += -dy * k;
+  // Cap velocity so violent shakes don't teleport off-screen.
+  const VMAX = 1400;
+  if (state.gooseVX >  VMAX) state.gooseVX =  VMAX;
+  if (state.gooseVX < -VMAX) state.gooseVX = -VMAX;
+  if (state.gooseVY >  VMAX) state.gooseVY =  VMAX;
+  if (state.gooseVY < -VMAX) state.gooseVY = -VMAX;
+}
+
+// Integrate velocity, slide, and bounce off canvas edges.
+function stepGooseBump(dt) {
+  if (state.exploding || state.gooseHidden) {
+    state.gooseBumpX = state.gooseBumpY = 0;
+    state.gooseVX    = state.gooseVY    = 0;
+    state.bumpFlash  = Math.max(0, state.bumpFlash - dt * 4);
+    return;
+  }
+  // Friction (exponential decay).
+  const decay = Math.exp(-dt * BUMP_FRICTION_PER_SEC);
+  state.gooseVX *= decay;
+  state.gooseVY *= decay;
+  // Integrate.
+  state.gooseBumpX += state.gooseVX * dt;
+  state.gooseBumpY += state.gooseVY * dt;
+  // Compute bounds from the current goose footprint, leaving a small margin
+  // so the goose never clips off-screen.
+  const c     = gooseCenter();
+  const size  = gooseBaseSize() * Math.max(state.gooseBaseScale, 0.15);
+  const halfW = size * 0.40;
+  const halfH = size * 0.42;
+  const margin = 6;
+  const minX = -(c.x - halfW - margin);
+  const maxX =  (W - c.x - halfW - margin);
+  const minY = -(c.y - halfH - margin);
+  // Don't bounce off the spike row — stop short above it.
+  const SPIKE_HEIGHT = 30;
+  const maxY =  (H - SPIKE_HEIGHT - c.y - halfH - margin);
+  const now  = performance.now();
+  let hit = false, hitSpeed = 0;
+  if (state.gooseBumpX < minX) {
+    state.gooseBumpX = minX;
+    hitSpeed = Math.max(hitSpeed, Math.abs(state.gooseVX));
+    state.gooseVX = -state.gooseVX * BUMP_RESTITUTION;
+    hit = true;
+  } else if (state.gooseBumpX > maxX) {
+    state.gooseBumpX = maxX;
+    hitSpeed = Math.max(hitSpeed, Math.abs(state.gooseVX));
+    state.gooseVX = -state.gooseVX * BUMP_RESTITUTION;
+    hit = true;
+  }
+  if (state.gooseBumpY < minY) {
+    state.gooseBumpY = minY;
+    hitSpeed = Math.max(hitSpeed, Math.abs(state.gooseVY));
+    state.gooseVY = -state.gooseVY * BUMP_RESTITUTION;
+    hit = true;
+  } else if (state.gooseBumpY > maxY) {
+    state.gooseBumpY = maxY;
+    hitSpeed = Math.max(hitSpeed, Math.abs(state.gooseVY));
+    state.gooseVY = -state.gooseVY * BUMP_RESTITUTION;
+    hit = true;
+  }
+  if (hit && hitSpeed > BUMP_MIN_SPEED_FOR_FX
+      && now - state.lastBumpAt > BUMP_SOUND_COOLDOWN_MS) {
+    state.lastBumpAt = now;
+    const intensity = Math.min(1, hitSpeed / 900);
+    playBonk(intensity);
+    vibrate(Math.round(15 + intensity * 35));
+    state.bumpFlash = Math.min(1, 0.4 + intensity * 0.6);
+  }
+  state.bumpFlash = Math.max(0, state.bumpFlash - dt * 3.5);
+}
+
 // Smoothly drive gooseDescentY toward its target, plus a small nervous
 // horizontal sway whose amplitude scales with tempo.
 function stepGooseDescent(dt) {
@@ -2105,8 +2240,8 @@ function drawGoose() {
   ctx.save();
   ctx.globalAlpha = state.gooseAlpha;
   ctx.translate(
-    c.x + state.gooseSwayX,
-    c.y + state.gooseAnimTranslateY + state.gooseDescentY
+    c.x + state.gooseSwayX + state.gooseBumpX,
+    c.y + state.gooseAnimTranslateY + state.gooseDescentY + state.gooseBumpY
   );
   ctx.rotate(state.gooseAnimRotation);
   const sx = state.gooseBaseScale * state.gooseAnimScaleX;
@@ -3084,6 +3219,9 @@ function _onDeviceMotion(e) {
         }
         state.lastTapAt = now;
       }
+      // Also push a physical impulse: phone-frame deltas become world-frame
+      // forces on the goose so it slides and slams into the canvas edges.
+      applyShakeImpulse(dx, dy, dz);
     }
   }
   _shakePrev = cur;
@@ -3247,6 +3385,7 @@ function frame(now) {
     applyTempoScale();
     applyHeat();
     stepGooseDescent(dt);
+    stepGooseBump(dt);
     updateMotivation();
     if (gooseTouchingSpikes()) {
       triggerExplode();
