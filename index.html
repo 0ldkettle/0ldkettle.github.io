@@ -666,6 +666,9 @@ const state = {
   lastTapTime: 0,
   cheatPenaltyUntil: 0,
   lastCheatWarnAt: 0,
+  // Post-explosion deer cutscene: { phase: 'hatch'|'fly'|null, t, x, y, vx, vy, rot }
+  // The goose 'hatches' into a flying deer that soars off-screen, then the goose respawns.
+  deer: null,
 };
 
 // =============================================================
@@ -1606,6 +1609,217 @@ function startRespawn() {
   state.respawnT     = 0;
   state.gooseHidden  = false;
 }
+
+// =============================================================
+// Post-explosion deer cutscene
+// -----------------------------------------------------------------
+// When the goose explodes, a stylized deer 'hatches' from the
+// debris and soars off-screen. The goose respawns after the deer
+// clears the top of the canvas. Art was redrawn from scratch in
+// the same minimal-line style as the goose for license cleanliness.
+// Coordinates use a 300x400 local viewBox like the goose.
+// =============================================================
+const DEER_C_BODY  = '#C9885A';
+const DEER_C_BELLY = '#F0D6B8';
+const DEER_C_EAR   = '#A0673E';
+const DEER_C_HORN  = '#8B5A2B';
+const DEER_C_LINE  = '#1A1A1A';
+const DEER_C_NOSE  = '#1A1A1A';
+const DEER_C_EYEBG = '#FFFFFF';
+const DEER_C_PUPIL = '#111111';
+
+function _mkDeerPath(build) {
+  const p = new Path2D();
+  build(p);
+  return p;
+}
+const DEER_BODY  = _mkDeerPath(p => {
+  p.moveTo(80,260);
+  p.bezierCurveTo(60,250, 60,200, 95,185);
+  p.bezierCurveTo(140,170, 200,172, 230,200);
+  p.bezierCurveTo(255,225, 252,275, 220,295);
+  p.bezierCurveTo(190,308, 150,310, 120,305);
+  p.bezierCurveTo(95,300, 80,280, 80,260);
+  p.closePath();
+});
+const DEER_BELLY = _mkDeerPath(p => {
+  p.moveTo(110,275);
+  p.bezierCurveTo(140,288, 200,288, 225,278);
+  p.bezierCurveTo(218,300, 180,308, 145,305);
+  p.bezierCurveTo(125,302, 112,290, 110,275);
+  p.closePath();
+});
+const DEER_NECK  = _mkDeerPath(p => {
+  p.moveTo(195,210);
+  p.bezierCurveTo(195,170, 215,140, 235,118);
+  p.bezierCurveTo(245,108, 250,108, 255,118);
+  p.bezierCurveTo(252,140, 240,170, 230,200);
+  p.closePath();
+});
+const DEER_HEAD  = _mkDeerPath(p => {
+  p.moveTo(220,90);
+  p.bezierCurveTo(245,80, 270,90, 275,108);
+  p.bezierCurveTo(278,124, 268,138, 252,140);
+  p.bezierCurveTo(245,140, 235,138, 228,134);
+  p.bezierCurveTo(218,128, 215,115, 218,100);
+  p.bezierCurveTo(218,95, 218,92, 220,90);
+  p.closePath();
+});
+const DEER_SNOUT = _mkDeerPath(p => {
+  p.moveTo(265,118);
+  p.bezierCurveTo(282,118, 290,126, 286,135);
+  p.bezierCurveTo(280,142, 268,142, 260,138);
+  p.closePath();
+});
+const DEER_EAR   = _mkDeerPath(p => {
+  p.moveTo(232,92);
+  p.bezierCurveTo(212,80, 205,90, 215,105);
+  p.bezierCurveTo(220,108, 228,104, 232,92);
+  p.closePath();
+});
+const DEER_TAIL  = _mkDeerPath(p => {
+  p.moveTo(78,225);
+  p.bezierCurveTo(60,215, 50,220, 55,235);
+  p.bezierCurveTo(62,238, 72,234, 80,232);
+  p.closePath();
+});
+const DEER_ANTLER_L = _mkDeerPath(p => {
+  p.moveTo(235,92); p.lineTo(228,55);
+  p.moveTo(228,72); p.lineTo(213,62);
+  p.moveTo(228,72); p.lineTo(220,52);
+  p.moveTo(228,55); p.lineTo(218,40);
+  p.moveTo(228,55); p.lineTo(238,42);
+});
+const DEER_ANTLER_R = _mkDeerPath(p => {
+  p.moveTo(258,92); p.lineTo(268,52);
+  p.moveTo(263,72); p.lineTo(280,64);
+  p.moveTo(263,72); p.lineTo(258,55);
+  p.moveTo(268,52); p.lineTo(282,44);
+  p.moveTo(268,52); p.lineTo(258,38);
+});
+const DEER_LEGS = _mkDeerPath(p => {
+  p.moveTo(115,290); p.lineTo(115,360);
+  p.moveTo(135,290); p.lineTo(135,360);
+  p.moveTo(200,290); p.lineTo(200,360);
+  p.moveTo(220,290); p.lineTo(220,360);
+});
+const DEER_HOOVES = _mkDeerPath(p => {
+  p.rect(110,358, 14,8);
+  p.rect(130,358, 14,8);
+  p.rect(195,358, 14,8);
+  p.rect(215,358, 14,8);
+});
+
+function _deerStrokePath(g, path, w, color) {
+  g.lineWidth   = w;
+  g.strokeStyle = color;
+  g.lineJoin    = 'round';
+  g.lineCap     = 'round';
+  g.stroke(path);
+}
+
+// Render the deer in local 300x400 coordinates (caller must scale).
+function drawDeerSvg(g) {
+  // Body fills
+  g.fillStyle = DEER_C_BODY;  g.fill(DEER_BODY);
+  g.fillStyle = DEER_C_BELLY; g.fill(DEER_BELLY);
+  g.fillStyle = DEER_C_BODY;  g.fill(DEER_NECK); g.fill(DEER_HEAD); g.fill(DEER_SNOUT);
+  g.fillStyle = DEER_C_EAR;   g.fill(DEER_EAR);
+  g.fillStyle = DEER_C_BODY;  g.fill(DEER_TAIL);
+
+  // Outlines
+  _deerStrokePath(g, DEER_BODY,  3,   DEER_C_LINE);
+  _deerStrokePath(g, DEER_BELLY, 2,   DEER_C_LINE);
+  _deerStrokePath(g, DEER_NECK,  3,   DEER_C_LINE);
+  _deerStrokePath(g, DEER_HEAD,  3,   DEER_C_LINE);
+  _deerStrokePath(g, DEER_SNOUT, 2.5, DEER_C_LINE);
+  _deerStrokePath(g, DEER_EAR,   2.5, DEER_C_LINE);
+  _deerStrokePath(g, DEER_TAIL,  2.5, DEER_C_LINE);
+
+  // Antlers
+  _deerStrokePath(g, DEER_ANTLER_L, 4, DEER_C_HORN);
+  _deerStrokePath(g, DEER_ANTLER_R, 4, DEER_C_HORN);
+
+  // Legs
+  _deerStrokePath(g, DEER_LEGS, 6, DEER_C_LINE);
+  g.fillStyle = DEER_C_LINE; g.fill(DEER_HOOVES);
+
+  // Eye
+  g.fillStyle = DEER_C_EYEBG;
+  g.beginPath(); g.arc(248, 113, 5, 0, Math.PI * 2); g.fill();
+  g.lineWidth = 1.5; g.strokeStyle = DEER_C_LINE; g.stroke();
+  g.fillStyle = DEER_C_PUPIL;
+  g.beginPath(); g.arc(250, 114, 2.5, 0, Math.PI * 2); g.fill();
+
+  // Nose
+  g.fillStyle = DEER_C_NOSE;
+  g.beginPath(); g.arc(284, 128, 2.4, 0, Math.PI * 2); g.fill();
+}
+
+function spawnDeer(x, y) {
+  state.deer = {
+    phase: 'hatch',
+    t: 0,
+    x: x,
+    y: y,
+    vx: (Math.random() * 2 - 1) * 30,   // small horizontal drift
+    vy: 0,                                // accelerates upward in fly phase
+    rot: 0,
+  };
+}
+
+function updateDeer(dt) {
+  const d = state.deer;
+  if (!d) return;
+  d.t += dt;
+  if (d.phase === 'hatch') {
+    // 0.45s of pop-in. Once fully scaled, switch to flight.
+    if (d.t >= 0.45) {
+      d.phase = 'fly';
+      d.t = 0;
+      d.vy = -180;
+    }
+  } else if (d.phase === 'fly') {
+    // Gentle upward acceleration + side-to-side wobble for character.
+    d.vy -= 360 * dt;                             // accelerate upward
+    d.vx += Math.sin(d.t * 4) * 80 * dt;          // sway
+    d.x  += d.vx * dt;
+    d.y  += d.vy * dt;
+    // Bank into the direction of motion (visual lean).
+    d.rot = Math.max(-0.45, Math.min(0.45, d.vx / 220));
+    // Once the deer clears the top of the canvas with margin, end the
+    // cutscene and respawn the goose.
+    if (d.y < -200) {
+      state.deer = null;
+      startRespawn();
+    }
+  }
+}
+
+function drawDeer() {
+  const d = state.deer;
+  if (!d) return;
+  const cv = document.getElementById('cv');
+  // Local box is 300x400. Draw at the same on-screen size as the goose.
+  const targetH = Math.min(cv.height * 0.5, 420);
+  const scale   = targetH / 400;
+  let popScale  = 1;
+  if (d.phase === 'hatch') {
+    const p  = Math.min(1, d.t / 0.45);
+    const s  = 2.2;
+    const tt = p - 1;
+    const ep = tt * tt * ((s + 1) * tt + s) + 1;
+    popScale = 0.15 + (1 - 0.15) * ep;
+  }
+  ctx.save();
+  ctx.translate(d.x, d.y);
+  ctx.rotate(d.rot);
+  ctx.scale(scale * popScale, scale * popScale);
+  // Center the 300x400 viewBox on (d.x, d.y).
+  ctx.translate(-150, -200);
+  drawDeerSvg(ctx);
+  ctx.restore();
+}
 function updateRespawn(dt) {
   if (state.respawnT >= 1) return;
   state.respawnT = Math.min(1, state.respawnT + dt / 0.32);
@@ -2048,12 +2262,12 @@ function triggerExplode() {
 
   flashScreen();
 
-  // Hide goose; respawn after particle peak
+  // Hide goose; spawn deer (which then triggers respawn when it flies off).
   state.gooseHidden = true;
   setTimeout(() => {
     const cc = gooseCenter();
     spawnTapFx(cc.x, cc.y);
-    startRespawn();
+    spawnDeer(cc.x, cc.y);
   }, 420);
 }
 
@@ -2329,6 +2543,11 @@ function frame(now) {
   updateGooseAnim(dt);
   updateRespawn(dt);
   drawGoose();
+
+  // Post-explosion deer cutscene (drawn over the empty stage while the
+  // goose is hidden, before ripple/feather overlays).
+  updateDeer(dt);
+  drawDeer();
 
   // Draw ripple rings on top of goose
   for (const r of ripples) {
