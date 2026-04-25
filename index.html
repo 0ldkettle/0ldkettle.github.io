@@ -1032,6 +1032,9 @@ const state = {
   gooseVY: 0,
   // Last wall hit: timestamp for cooldown + 'flash' visual cue.
   lastBumpAt: -Infinity,
+  // Cooldown for awarding score on hard wall impacts (separate from sound
+  // cooldown so a single hit can't both unmute audio AND skip scoring).
+  lastBumpScoreAt: -Infinity,
   bumpFlash: 0,
   gooseAlpha: 1,
   gooseHidden: false,
@@ -1981,6 +1984,21 @@ function stepGooseBump(dt) {
     AudioPool.play();
     vibrate(Math.round(15 + intensity * 35));
     state.bumpFlash = Math.min(1, 0.4 + intensity * 0.6);
+    // Hard wall hits award score — the goose smashing into the edges should
+    // feel rewarding, not just decorative. Cooldown-gated so a fast-bouncing
+    // fling can't spam points; capped to +2 even on the strongest impact.
+    if (hitSpeed >= BUMP_SCORE_MIN_SPEED
+        && now - state.lastBumpScoreAt > BUMP_SCORE_COOLDOWN_MS
+        && !state.exploding) {
+      state.lastBumpScoreAt = now;
+      const pts = (hitSpeed >= BUMP_SCORE_VMAX_BONUS) ? 2 : 1;
+      state.pendingScore += pts;
+      // Spawn the chip from the goose's current center so the +N flies
+      // up to the score readout, mirroring tap feedback.
+      const cgx = c.x + state.gooseSwayX + state.gooseBumpX;
+      const cgy = c.y + state.gooseAnimTranslateY + state.gooseDescentY + state.gooseBumpY;
+      for (let i = 0; i < pts; i++) flyPointToScore(cgx, cgy);
+    }
   }
   state.bumpFlash = Math.max(0, state.bumpFlash - dt * 3.5);
 }
@@ -3103,25 +3121,195 @@ function triggerExplode() {
 
 // =============================================================
 // Touch / mouse input — broad hit area (full canvas minus HUD)
+//
+// Two interaction modes share the same pointerdown:
+//   - TAP: short contact (< DRAG_HOLD_MS) that doesn't move past
+//     DRAG_MOVE_PX. Fires onGooseTap on release at the original point.
+//   - DRAG: contact on the goose silhouette that exceeds either threshold.
+//     Goose follows the finger; on release it flies off with the finger's
+//     last velocity (clamped to VMAX). A hard fling also feeds tempo as
+//     virtual taps (same path as shake).
 // =============================================================
 function inputToLocal(clientX, clientY) {
   const r = cv.getBoundingClientRect();
   return { x: clientX - r.left, y: clientY - r.top };
 }
 
+// Hit-test the visible goose silhouette as an ellipse around its current
+// rendered center. Tolerance is generous on touchscreens.
+function _gooseEllipseHit(x, y) {
+  if (state.exploding || state.gooseHidden) return false;
+  const c    = gooseCenter();
+  const cx   = c.x + state.gooseSwayX + state.gooseBumpX;
+  const cy   = c.y + state.gooseAnimTranslateY + state.gooseDescentY + state.gooseBumpY;
+  const size = gooseBaseSize() * Math.max(state.gooseBaseScale, 0.25);
+  // Slightly bigger than the visible silhouette so fingers don't slip off.
+  const rx   = size * 0.50;
+  const ry   = size * 0.55;
+  const dx   = (x - cx) / rx;
+  const dy   = (y - cy) / ry;
+  return (dx * dx + dy * dy) <= 1;
+}
+
+const DRAG_MOVE_PX     = 12;     // movement past this = it's a drag, not a tap
+const DRAG_HOLD_MS     = 220;    // holding longer than this = it's a drag
+const FLING_SAMPLE_MS  = 90;     // window for last-known velocity on release
+const FLING_TEMPO_MIN  = 900;    // px/s release speed needed to add a virtual tap
+const FLING_TEMPO_MAX_PER_S = 18;// cap virtual taps from flings (per second)
+const BUMP_SCORE_MIN_SPEED  = 400;  // px/s wall-impact speed to award a point
+const BUMP_SCORE_COOLDOWN_MS = 140; // anti-spam between scoring bumps
+const BUMP_SCORE_VMAX_BONUS  = 1500;// above this hit-speed, +2 points instead of +1
+
+// Active pointer drag bookkeeping.
+let _drag = null;        // { id, downX, downY, downAt, lastX, lastY, samples[], moved, locked, started }
+let _flingTapsThisSec = 0;
+let _flingTapsResetAt = 0;
+
+function _resetDrag() { _drag = null; }
+
+function _beginDrag(now) {
+  if (!_drag) return;
+  _drag.started = true;
+  // Freeze physics so the goose snaps to the finger crisply.
+  state.gooseVX = 0;
+  state.gooseVY = 0;
+}
+
+function _onPointerDown(id, x, y, clientX, clientY) {
+  // Only one active drag at a time — a second finger is ignored for drag
+  // but still falls through to tap-if-released-quickly logic at the end.
+  const now = performance.now();
+  if (_drag) return false;
+  _drag = {
+    id,
+    downX: x, downY: y,
+    lastX: x, lastY: y,
+    downAt: now,
+    samples: [{ t: now, x, y }],
+    moved: false,
+    started: false,           // becomes true once we cross drag threshold
+    onGoose: _gooseEllipseHit(x, y),
+  };
+  return true;
+}
+
+function _onPointerMove(id, x, y) {
+  if (!_drag || _drag.id !== id) return;
+  const now = performance.now();
+  const dxFromDown = x - _drag.downX;
+  const dyFromDown = y - _drag.downY;
+  const movedFar   = (dxFromDown * dxFromDown + dyFromDown * dyFromDown) >= DRAG_MOVE_PX * DRAG_MOVE_PX;
+  const heldLong   = (now - _drag.downAt) >= DRAG_HOLD_MS;
+  if (!_drag.started && _drag.onGoose && (movedFar || heldLong)) {
+    _beginDrag(now);
+  }
+  _drag.lastX = x;
+  _drag.lastY = y;
+  if (movedFar) _drag.moved = true;
+  // Trim old samples out of the velocity window.
+  _drag.samples.push({ t: now, x, y });
+  while (_drag.samples.length > 2 && (now - _drag.samples[0].t) > FLING_SAMPLE_MS) {
+    _drag.samples.shift();
+  }
+  if (_drag.started && !state.exploding && !state.gooseHidden) {
+    // Move the goose so its center sits under the finger. We write directly
+    // into gooseBumpX/Y because the existing render pipeline already adds
+    // these offsets to gooseCenter().
+    const c = gooseCenter();
+    state.gooseBumpX = x - c.x - state.gooseSwayX;
+    state.gooseBumpY = y - c.y - state.gooseAnimTranslateY - state.gooseDescentY;
+  }
+}
+
+function _onPointerUp(id, x, y) {
+  if (!_drag || _drag.id !== id) return;
+  const d = _drag;
+  _resetDrag();
+  const now = performance.now();
+  if (!d.started) {
+    // Treat as a tap at the original press point if it's quick + steady.
+    if (!d.moved && (now - d.downAt) < DRAG_HOLD_MS) {
+      onGooseTap(d.downX, d.downY);
+    }
+    return;
+  }
+  // Fling: derive velocity from the most recent samples.
+  const samples = d.samples;
+  if (samples.length >= 2) {
+    const a = samples[0];
+    const b = samples[samples.length - 1];
+    const dt = Math.max(1, b.t - a.t) / 1000;
+    let vx = (b.x - a.x) / dt;
+    let vy = (b.y - a.y) / dt;
+    const VMAX = 2600;
+    vx = Math.max(-VMAX, Math.min(VMAX, vx));
+    vy = Math.max(-VMAX, Math.min(VMAX, vy));
+    state.gooseVX = vx;
+    state.gooseVY = vy;
+    const speed = Math.hypot(vx, vy);
+    // Strong fling — feed tempo like a virtual tap (rate-limited so users
+    // can't farm tempo by repeatedly flinging hard).
+    if (speed >= FLING_TEMPO_MIN) {
+      if (now - _flingTapsResetAt > 1000) {
+        _flingTapsResetAt = now;
+        _flingTapsThisSec = 0;
+      }
+      const burst = (speed >= FLING_TEMPO_MIN * 2) ? 3 : (speed >= FLING_TEMPO_MIN * 1.5) ? 2 : 1;
+      const allowed = Math.max(0, FLING_TEMPO_MAX_PER_S - _flingTapsThisSec);
+      const adds = Math.min(burst, allowed);
+      for (let i = 0; i < adds; i++) {
+        state.tapTimes.push(now);
+      }
+      _flingTapsThisSec += adds;
+      if (adds > 0) state.lastTapAt = now;
+    }
+  }
+}
+
 cv.addEventListener('touchstart', (e) => {
   e.preventDefault();
   for (const t of e.changedTouches) {
     const p = inputToLocal(t.clientX, t.clientY);
-    onGooseTap(p.x, p.y);
+    _onPointerDown(t.identifier, p.x, p.y, t.clientX, t.clientY);
   }
 }, { passive: false });
 
+cv.addEventListener('touchmove', (e) => {
+  // Prevent page scroll while dragging the goose.
+  if (_drag && _drag.started) e.preventDefault();
+  for (const t of e.changedTouches) {
+    const p = inputToLocal(t.clientX, t.clientY);
+    _onPointerMove(t.identifier, p.x, p.y);
+  }
+}, { passive: false });
+
+function _touchEndHandler(e) {
+  for (const t of e.changedTouches) {
+    const p = inputToLocal(t.clientX, t.clientY);
+    _onPointerUp(t.identifier, p.x, p.y);
+  }
+}
+cv.addEventListener('touchend',    _touchEndHandler);
+cv.addEventListener('touchcancel', _touchEndHandler);
+
+const _MOUSE_ID = 'mouse';
+let _mouseDown = false;
 cv.addEventListener('mousedown', (e) => {
   // Skip if the browser also fires touch events for this interaction
   if (e.sourceCapabilities && e.sourceCapabilities.firesTouchEvents) return;
   const p = inputToLocal(e.clientX, e.clientY);
-  onGooseTap(p.x, p.y);
+  _mouseDown = _onPointerDown(_MOUSE_ID, p.x, p.y, e.clientX, e.clientY);
+});
+window.addEventListener('mousemove', (e) => {
+  if (!_mouseDown) return;
+  const p = inputToLocal(e.clientX, e.clientY);
+  _onPointerMove(_MOUSE_ID, p.x, p.y);
+});
+window.addEventListener('mouseup', (e) => {
+  if (!_mouseDown) return;
+  _mouseDown = false;
+  const p = inputToLocal(e.clientX, e.clientY);
+  _onPointerUp(_MOUSE_ID, p.x, p.y);
 });
 
 // Suppress context menu and browser gestures
