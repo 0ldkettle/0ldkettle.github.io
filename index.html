@@ -2011,6 +2011,10 @@ function stepGooseDescent(dt) {
     state.gooseSwayX    = 0;
     return;
   }
+  // While the user is actively dragging the goose, freeze sway and descent
+  // so the grabbed point stays locked under the finger. They resume the
+  // moment the drag ends.
+  if (typeof _drag !== 'undefined' && _drag && _drag.started) return;
   const target = gooseDescentTarget() * Math.min(1, state.tempo / TEMPO_EXPLODE);
   // Critically-damped-ish lerp: ~0.35s settling time.
   const k = 1 - Math.exp(-dt / 0.18);
@@ -3180,6 +3184,13 @@ function _onPointerDown(id, x, y, clientX, clientY) {
   // but still falls through to tap-if-released-quickly logic at the end.
   const now = performance.now();
   if (_drag) return false;
+  // Capture the finger → rendered-goose-center offset NOW, at the very moment
+  // of contact — not later when drag actually starts. The goose is rendered
+  // at gooseCenter + sway + bump (+ anim/descent on Y), and we want the
+  // grabbed point to stay glued to the finger throughout the drag.
+  const c   = gooseCenter();
+  const cgx = c.x + state.gooseSwayX + state.gooseBumpX;
+  const cgy = c.y + state.gooseAnimTranslateY + state.gooseDescentY + state.gooseBumpY;
   _drag = {
     id,
     downX: x, downY: y,
@@ -3189,6 +3200,8 @@ function _onPointerDown(id, x, y, clientX, clientY) {
     moved: false,
     started: false,           // becomes true once we cross drag threshold
     onGoose: _gooseEllipseHit(x, y),
+    grabOffsetX: x - cgx,     // preserved throughout the drag
+    grabOffsetY: y - cgy,
   };
   return true;
 }
@@ -3212,12 +3225,13 @@ function _onPointerMove(id, x, y) {
     _drag.samples.shift();
   }
   if (_drag.started && !state.exploding && !state.gooseHidden) {
-    // Move the goose so its center sits under the finger. We write directly
-    // into gooseBumpX/Y because the existing render pipeline already adds
-    // these offsets to gooseCenter().
-    const c = gooseCenter();
-    state.gooseBumpX = x - c.x - state.gooseSwayX;
-    state.gooseBumpY = y - c.y - state.gooseAnimTranslateY - state.gooseDescentY;
+    // Keep the original grab point under the finger — the goose moves so
+    // that (rendered center + grabOffset) == finger position.
+    const c   = gooseCenter();
+    const ox  = _drag.grabOffsetX || 0;
+    const oy  = _drag.grabOffsetY || 0;
+    state.gooseBumpX = (x - ox) - c.x - state.gooseSwayX;
+    state.gooseBumpY = (y - oy) - c.y - state.gooseAnimTranslateY - state.gooseDescentY;
   }
 }
 
