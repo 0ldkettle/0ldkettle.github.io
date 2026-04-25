@@ -337,13 +337,11 @@
   }
 
   /* ---------- Tablet / iPad layout ----------
-     iPad portrait is 768px, landscape mini 744px, iPad Pro 11" landscape
-     up to 1194px. Phones top out around 480px. The 700px breakpoint
-     cleanly catches every iPad (portrait + landscape) without touching
-     phones. We widen the playfield, scale up HUD chrome, and beef up the
-     control buttons so they're comfortable for a finger on a 11-13" slab. */
+     On large screens (≥700px) the stage fills the entire viewport — no
+     centered column, no letterboxing. HUD chrome and controls are scaled
+     up so they remain comfortable for a finger on an 11-13" slab. */
   @media (min-width: 700px) {
-    #stage { max-width: 820px; }
+    #stage { max-width: none; left: 0; transform: none; }
     .hud-top { padding: max(20px, env(safe-area-inset-top)) 92px 14px 24px; gap: 10px; }
     .chip { font-size: 18px; padding: 10px 16px; border-radius: 18px; }
     #motivation { font-size: 22px; }
@@ -356,10 +354,6 @@
     #buildHash { font-size: 12px; left: 18px; }
     #tapRate { font-size: 16px; right: 18px; padding: 6px 10px; }
     .fly-plus { width: 44px; height: 44px; }
-  }
-  /* iPad Pro / large landscape — give the stage even more breathing room. */
-  @media (min-width: 1100px) {
-    #stage { max-width: 900px; }
   }
 </style>
 </head>
