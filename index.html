@@ -441,10 +441,10 @@ const I18N = {
     app_name: 'Goose Clicker',
     score_fmt: (n) => `Score: ${fmtNum(n)}`,
     explode_count_fmt: (n) => `Explosions: ${fmtNum(n)}`,
-    shake_enable_label: 'Enable shake-to-explode',
+    shake_enable_label: 'Enable shake to boost tempo',
     shake_denied: 'Motion access denied',
     shake_unavailable: 'No motion sensor',
-    shake_enabled: 'Shake to explode!',
+    shake_enabled: 'Shake to boost the tempo!',
     credits_title: 'About',
     credits_body:
       'Goose Clicker · build __BUILD__\n\nSound: "Duck Quack" — qubodup\nhttps://freesound.org/s/442820/\nLicense: CC BY 4.0\nRemixed from "20130403_duck.04.wav" — dobroide (CC BY 3.0)\n\nGoose icon: AI-generated',
@@ -678,10 +678,10 @@ const I18N = {
     app_name: 'Гусь-Кликер',
     score_fmt: (n) => `Счёт: ${fmtNum(n)}`,
     explode_count_fmt: (n) => `Взрывов: ${fmtNum(n)}`,
-    shake_enable_label: 'Включить тряску-взрыв',
+    shake_enable_label: 'Включить тряску для разгона темпа',
     shake_denied: 'Доступ к датчику движения запрещён',
     shake_unavailable: 'Нет датчика движения',
-    shake_enabled: 'Тряси, чтобы взорвать!',
+    shake_enabled: 'Тряси, чтобы разогнать темп!',
     credits_title: 'О приложении',
     credits_body:
       'Гусь-Кликер · сборка __BUILD__\n\nЗвук: «Duck Quack» — qubodup\nhttps://freesound.org/s/442820/\nЛицензия: CC BY 4.0\nРемикс звука «20130403_duck.04.wav» — dobroide (CC BY 3.0)\n\nИконка гуся: сгенерирована ИИ',
@@ -3044,13 +3044,15 @@ applyLanguage(currentLang);
 // auto-attach the listener if motion is supported.
 // =============================================================
 const shakeBtn = document.getElementById('shakeBtn');
-const SHAKE_THRESHOLD = 22;       // m/s² — magnitude of acceleration delta
-const SHAKE_COOLDOWN_MS = 1200;   // anti-spam between explosions
-const SHAKE_NEEDS_SAMPLES = 2;    // require at least 2 strong samples in window
-const SHAKE_WINDOW_MS = 350;
+// Shake feeds the same tempo system as taps: each strong motion sample
+// pushes a virtual "tap" timestamp into state.tapTimes, so the main loop
+// sees a higher tps and grows state.tempo naturally toward an explosion.
+// Shake never awards score directly and never calls triggerExplode().
+const SHAKE_THRESHOLD = 14;        // m/s² — magnitude of accel delta to count as a sample
+const SHAKE_TAP_GAP_MS = 28;       // min gap between two virtual taps; ~36 tps cap from shaking
+const SHAKE_TAPS_PER_HIT = 1;      // virtual taps inserted per strong sample
 let _shakeAttached = false;
-let _shakeLastTrigger = -Infinity;
-let _shakeHits = [];
+let _shakeLastVirtualTapAt = -Infinity;
 let _shakePrev = null;
 
 function _hasMotionSupport() {
@@ -3065,24 +3067,22 @@ function _onDeviceMotion(e) {
   const a = e.accelerationIncludingGravity || e.acceleration;
   if (!a || (a.x == null && a.y == null && a.z == null)) return;
   const cur = { x: a.x || 0, y: a.y || 0, z: a.z || 0 };
-  if (_shakePrev) {
+  if (_shakePrev && !state.exploding) {
     const dx = cur.x - _shakePrev.x;
     const dy = cur.y - _shakePrev.y;
     const dz = cur.z - _shakePrev.z;
     const mag = Math.sqrt(dx * dx + dy * dy + dz * dz);
     if (mag > SHAKE_THRESHOLD) {
       const now = performance.now();
-      _shakeHits.push(now);
-      // Drop old hits
-      while (_shakeHits.length && now - _shakeHits[0] > SHAKE_WINDOW_MS) {
-        _shakeHits.shift();
-      }
-      if (_shakeHits.length >= SHAKE_NEEDS_SAMPLES
-          && now - _shakeLastTrigger > SHAKE_COOLDOWN_MS
-          && !state.exploding) {
-        _shakeLastTrigger = now;
-        _shakeHits.length = 0;
-        triggerExplode();
+      // Throttle so a single strong motion event — which fires many
+      // devicemotion samples in rapid succession on iOS (~60Hz) —
+      // doesn't push 60 fake taps in one second. Cap virtual-tap rate.
+      if (now - _shakeLastVirtualTapAt >= SHAKE_TAP_GAP_MS) {
+        _shakeLastVirtualTapAt = now;
+        for (let i = 0; i < SHAKE_TAPS_PER_HIT; i++) {
+          state.tapTimes.push(now);
+        }
+        state.lastTapAt = now;
       }
     }
   }
