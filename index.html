@@ -238,7 +238,7 @@
     gap: 6px;
     pointer-events: none;
   }
-  #langBtn, #styleBtn, #muteBtn {
+  #langBtn, #styleBtn, #muteBtn, #shakeBtn {
     position: relative;
     box-sizing: border-box;
     width: 44px;
@@ -261,9 +261,10 @@
     -webkit-touch-callout: none;
   }
   #muteBtn { font-size: 15px; }
+  #shakeBtn { font-size: 16px; }
 
   /* Long-press feedback: fill ring grows during hold, flashes on fire. */
-  #langBtn::before, #styleBtn::before, #muteBtn::before {
+  #langBtn::before, #styleBtn::before, #muteBtn::before, #shakeBtn::before {
     content: '';
     position: absolute;
     inset: -2px;
@@ -274,11 +275,11 @@
     transition: opacity .12s ease-out, transform .55s ease-out;
     pointer-events: none;
   }
-  #langBtn.holding::before, #styleBtn.holding::before, #muteBtn.holding::before {
+  #langBtn.holding::before, #styleBtn.holding::before, #muteBtn.holding::before, #shakeBtn.holding::before {
     opacity: 0.9;
     transform: scale(1.08);
   }
-  #langBtn.fired, #styleBtn.fired, #muteBtn.fired {
+  #langBtn.fired, #styleBtn.fired, #muteBtn.fired, #shakeBtn.fired {
     background: var(--neon-cyan);
     color: #000;
   }
@@ -318,10 +319,10 @@
     color: var(--neon-pink);
     text-shadow: 0 0 10px rgba(255,62,127,.75);
   }
-  #langBtn:active, #styleBtn:active, #muteBtn:active { transform: scale(0.93); }
+  #langBtn:active, #styleBtn:active, #muteBtn:active, #shakeBtn:active { transform: scale(0.93); }
 
   @media (hover: hover) and (pointer: fine) {
-    #langBtn, #styleBtn, #muteBtn {
+    #langBtn, #styleBtn, #muteBtn, #shakeBtn {
       background: rgba(10,6,30,.65);
       backdrop-filter: blur(6px);
       -webkit-backdrop-filter: blur(6px);
@@ -349,8 +350,9 @@
     .bonus-banner { font-size: 56px; }
     .cheat-banner { font-size: 24px; }
     #controls { top: max(16px, env(safe-area-inset-top)); right: 18px; gap: 10px; }
-    #langBtn, #styleBtn, #muteBtn { width: 60px; height: 42px; font-size: 16px; border-radius: 12px; }
+    #langBtn, #styleBtn, #muteBtn, #shakeBtn { width: 60px; height: 42px; font-size: 16px; border-radius: 12px; }
     #muteBtn { font-size: 20px; }
+    #shakeBtn { font-size: 20px; }
     #buildHash { font-size: 12px; left: 18px; }
     #tapRate { font-size: 16px; right: 18px; padding: 6px 10px; }
     .fly-plus { width: 44px; height: 44px; }
@@ -370,6 +372,7 @@
   <div id="controls">
     <button id="langBtn">EN</button>
     <button id="styleBtn">SVG</button>
+    <button id="shakeBtn" aria-label="Enable shake to explode" hidden>📳</button>
     <button id="muteBtn" aria-label="Toggle sound" title="Long-press for credits">🔊</button>
   </div>
   <div id="credits" role="dialog" aria-modal="true">
@@ -438,6 +441,10 @@ const I18N = {
     app_name: 'Goose Clicker',
     score_fmt: (n) => `Score: ${fmtNum(n)}`,
     explode_count_fmt: (n) => `Explosions: ${fmtNum(n)}`,
+    shake_enable_label: 'Enable shake-to-explode',
+    shake_denied: 'Motion access denied',
+    shake_unavailable: 'No motion sensor',
+    shake_enabled: 'Shake to explode!',
     credits_title: 'About',
     credits_body:
       'Goose Clicker · build __BUILD__\n\nSound: "Duck Quack" — qubodup\nhttps://freesound.org/s/442820/\nLicense: CC BY 4.0\nRemixed from "20130403_duck.04.wav" — dobroide (CC BY 3.0)\n\nGoose icon: AI-generated',
@@ -671,6 +678,10 @@ const I18N = {
     app_name: 'Гусь-Кликер',
     score_fmt: (n) => `Счёт: ${fmtNum(n)}`,
     explode_count_fmt: (n) => `Взрывов: ${fmtNum(n)}`,
+    shake_enable_label: 'Включить тряску-взрыв',
+    shake_denied: 'Доступ к датчику движения запрещён',
+    shake_unavailable: 'Нет датчика движения',
+    shake_enabled: 'Тряси, чтобы взорвать!',
     credits_title: 'О приложении',
     credits_body:
       'Гусь-Кликер · сборка __BUILD__\n\nЗвук: «Duck Quack» — qubodup\nhttps://freesound.org/s/442820/\nЛицензия: CC BY 4.0\nРемикс звука «20130403_duck.04.wav» — dobroide (CC BY 3.0)\n\nИконка гуся: сгенерирована ИИ',
@@ -3025,6 +3036,109 @@ attachLongPress(langBtn, () => {
 
 // Apply saved language on startup
 applyLanguage(currentLang);
+
+// =============================================================
+// Shake-to-explode — device motion triggers triggerExplode().
+// On iOS 13+ requires explicit permission via user gesture, so we
+// expose a small 📳 button that requests it. On other platforms we
+// auto-attach the listener if motion is supported.
+// =============================================================
+const shakeBtn = document.getElementById('shakeBtn');
+const SHAKE_THRESHOLD = 22;       // m/s² — magnitude of acceleration delta
+const SHAKE_COOLDOWN_MS = 1200;   // anti-spam between explosions
+const SHAKE_NEEDS_SAMPLES = 2;    // require at least 2 strong samples in window
+const SHAKE_WINDOW_MS = 350;
+let _shakeAttached = false;
+let _shakeLastTrigger = -Infinity;
+let _shakeHits = [];
+let _shakePrev = null;
+
+function _hasMotionSupport() {
+  return typeof window.DeviceMotionEvent !== 'undefined';
+}
+function _iosNeedsMotionPerm() {
+  return _hasMotionSupport()
+    && typeof DeviceMotionEvent.requestPermission === 'function';
+}
+
+function _onDeviceMotion(e) {
+  const a = e.accelerationIncludingGravity || e.acceleration;
+  if (!a || (a.x == null && a.y == null && a.z == null)) return;
+  const cur = { x: a.x || 0, y: a.y || 0, z: a.z || 0 };
+  if (_shakePrev) {
+    const dx = cur.x - _shakePrev.x;
+    const dy = cur.y - _shakePrev.y;
+    const dz = cur.z - _shakePrev.z;
+    const mag = Math.sqrt(dx * dx + dy * dy + dz * dz);
+    if (mag > SHAKE_THRESHOLD) {
+      const now = performance.now();
+      _shakeHits.push(now);
+      // Drop old hits
+      while (_shakeHits.length && now - _shakeHits[0] > SHAKE_WINDOW_MS) {
+        _shakeHits.shift();
+      }
+      if (_shakeHits.length >= SHAKE_NEEDS_SAMPLES
+          && now - _shakeLastTrigger > SHAKE_COOLDOWN_MS
+          && !state.exploding) {
+        _shakeLastTrigger = now;
+        _shakeHits.length = 0;
+        triggerExplode();
+      }
+    }
+  }
+  _shakePrev = cur;
+}
+
+function _attachShakeListener() {
+  if (_shakeAttached) return;
+  window.addEventListener('devicemotion', _onDeviceMotion, { passive: true });
+  _shakeAttached = true;
+}
+
+function _hideShakeBtn() {
+  if (shakeBtn) shakeBtn.hidden = true;
+}
+function _showShakeBtn() {
+  if (shakeBtn) shakeBtn.hidden = false;
+}
+
+// Wire up the button: tap requests permission (iOS) and attaches the
+// listener; on success we hide the button. On non-iOS browsers that
+// support motion we auto-attach silently.
+if (shakeBtn) {
+  shakeBtn.addEventListener('click', async () => {
+    if (_iosNeedsMotionPerm()) {
+      try {
+        const res = await DeviceMotionEvent.requestPermission();
+        if (res === 'granted') {
+          _attachShakeListener();
+          _hideShakeBtn();
+        } else {
+          shakeBtn.title = t('shake_denied');
+          shakeBtn.textContent = '🚫';
+        }
+      } catch {
+        shakeBtn.title = t('shake_denied');
+      }
+    } else if (_hasMotionSupport()) {
+      _attachShakeListener();
+      _hideShakeBtn();
+    } else {
+      shakeBtn.title = t('shake_unavailable');
+      shakeBtn.disabled = true;
+    }
+  });
+  // tooltip
+  shakeBtn.title = (function(){ try { return t('shake_enable_label'); } catch { return 'Shake'; } })();
+}
+
+// Initial setup: only show the button on iOS (where a tap is required).
+// On Android/desktop with motion support, attach silently.
+if (_iosNeedsMotionPerm()) {
+  _showShakeBtn();
+} else if (_hasMotionSupport()) {
+  _attachShakeListener();
+} // else: no sensor at all, leave button hidden
 
 // =============================================================
 // Goose style toggle (SVG ↔ PNG) — persists via Store.
