@@ -2473,7 +2473,7 @@ function flyBonusCube(startX, startY, value) {
     else {
       spawnBurst(x1 + half, y1 + half);
       plus.remove();
-      for (let k = 0; k < value; k++) onPointArrived();
+      onBonusArrived(value);
     }
   }
   requestAnimationFrame(step);
@@ -2719,10 +2719,35 @@ function onPointArrived() {
     // NOT record it as shown, so the next milestone after cooldown will
     // fire normally.
   }
-  // Throttle persist(): writing localStorage on every one of 10000
-  // bonus points stalls the main thread. Persist on milestones only;
-  // regular taps already persist via their own paths.
   if (state.score % 25 === 0) persist();
+}
+
+// Award a bonus chunk of points in O(1). Used by big bonuses (explosion
+// +10000, cube pop +100) so we don't slam onPointArrived() in a loop —
+// 10000 calls to el.animate() on a single element + 10000 textContent
+// writes was freezing the main thread for ~30s after the deer cutscene.
+function onBonusArrived(value) {
+  if (value <= 0) return;
+  if (value === 1) { onPointArrived(); return; }
+
+  state.score += value;
+  updateScoreText();
+  pulseEl(scoreEl, 1.28, 360); // Slightly bigger pulse for a chunk award
+
+  // Fire at most ONE praise banner for the entire chunk, gated by the
+  // global cooldown. The bonus banner (showBonusBanner) already calls out
+  // the +10000 separately, so we don't need to spam multiple milestones.
+  const crossedMilestone = state.score >= 100 && Math.floor(state.score / 100) !== Math.floor((state.score - value) / 100);
+  if (crossedMilestone && state.score !== state.lastMilestoneShown) {
+    const now = performance.now();
+    if (now - state.lastPraiseAt >= PRAISE_MIN_GAP_MS) {
+      state.lastMilestoneShown = state.score;
+      state.lastPraiseAt       = now;
+      showPraise();
+      vibrate([0, 80, 60, 80, 60, 150]);
+    }
+  }
+  persist();
 }
 
 function triggerExplode() {
