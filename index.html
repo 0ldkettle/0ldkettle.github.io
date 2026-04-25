@@ -1822,10 +1822,12 @@ function gooseDescentTarget() {
 // integrates velocity with friction, and bounces off the canvas edges
 // playing a synthesized 'bonk' on each wall hit.
 // =============================================================
-const BUMP_FRICTION_PER_SEC = 3.4;     // velocity decay (higher = stops faster)
-const BUMP_RESTITUTION       = 0.55;   // bounciness on wall hit
-const BUMP_MIN_SPEED_FOR_FX  = 80;     // px/sec; below this no sound on wall hit
-const BUMP_SOUND_COOLDOWN_MS = 90;     // anti-spam between bonk sounds
+// Tuned so the goose flies fast and bounces several times after a strong
+// shake before settling — "hockey puck on ice", not "goose in molasses".
+const BUMP_FRICTION_PER_SEC = 0.9;     // gentle drag so motion lasts ~2-3 s
+const BUMP_RESTITUTION       = 0.78;   // bounciness on wall hit — keeps energy
+const BUMP_MIN_SPEED_FOR_FX  = 60;     // px/sec; below this no sound on wall hit
+const BUMP_SOUND_COOLDOWN_MS = 60;     // anti-spam between bonk sounds
 
 // Wall-hit sound: same quack used by taps so the audio palette stays
 // consistent. AudioPool already handles muting, pitch jitter and pooling.
@@ -1834,15 +1836,17 @@ function playBonk(_intensity) {
 }
 
 // Apply an instantaneous velocity kick to the goose. Called from the
-// devicemotion handler when motion magnitude exceeds the bump threshold.
+// devicemotion handler whenever motion delta is non-trivial — even small
+// shakes push the goose so it feels alive, not floating in space.
 function applyShakeImpulse(dx, dy, dz) {
   if (state.exploding || state.gooseHidden) return;
-  // Scale + amplify so a normal phone shake produces visible motion.
-  const k = 18;
-  state.gooseVX += -dx * k;        // negative: shaking phone right pushes goose left (inertia)
+  // Strong scale: a typical hand shake (~25 m/s² delta) launches the goose
+  // at ~1100 px/s, which crosses a 400px canvas in ~0.35s.
+  const k = 45;
+  state.gooseVX += -dx * k;        // phone moves right => goose lags left
   state.gooseVY += -dy * k;
-  // Cap velocity so violent shakes don't teleport off-screen.
-  const VMAX = 1400;
+  // Cap velocity so violent shakes don't teleport off-screen in one frame.
+  const VMAX = 2600;
   if (state.gooseVX >  VMAX) state.gooseVX =  VMAX;
   if (state.gooseVX < -VMAX) state.gooseVX = -VMAX;
   if (state.gooseVY >  VMAX) state.gooseVY =  VMAX;
@@ -3167,6 +3171,10 @@ function _iosNeedsMotionPerm() {
     && typeof DeviceMotionEvent.requestPermission === 'function';
 }
 
+// Physics impulse threshold is much lower than the tempo threshold:
+// even a small wave should nudge the goose so it feels physically reactive.
+const PHYSICS_IMPULSE_MIN = 3;     // m/s² — ignore noise floor / breathing only
+
 function _onDeviceMotion(e) {
   const a = e.accelerationIncludingGravity || e.acceleration;
   if (!a || (a.x == null && a.y == null && a.z == null)) return;
@@ -3176,6 +3184,12 @@ function _onDeviceMotion(e) {
     const dy = cur.y - _shakePrev.y;
     const dz = cur.z - _shakePrev.z;
     const mag = Math.sqrt(dx * dx + dy * dy + dz * dz);
+    // Physical push: any meaningful motion above the noise floor moves the
+    // goose. Light motion = light push, hard motion = goose flies.
+    if (mag > PHYSICS_IMPULSE_MIN) {
+      applyShakeImpulse(dx, dy, dz);
+    }
+    // Tempo boost: only strong shakes count as virtual taps.
     if (mag > SHAKE_THRESHOLD) {
       const now = performance.now();
       // Throttle so a single strong motion event — which fires many
@@ -3188,9 +3202,6 @@ function _onDeviceMotion(e) {
         }
         state.lastTapAt = now;
       }
-      // Also push a physical impulse: phone-frame deltas become world-frame
-      // forces on the goose so it slides and slams into the canvas edges.
-      applyShakeImpulse(dx, dy, dz);
     }
   }
   _shakePrev = cur;
