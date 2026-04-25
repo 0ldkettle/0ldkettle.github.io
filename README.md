@@ -8,6 +8,17 @@ The further you push, the smaller the goose gets, the redder the screen glows, a
 
 > This game was created entirely by an AI agent, without human code authorship. All game logic, art direction, anti-cheat algorithm, and this README were generated autonomously. Use at your own amusement.
 
+## Designed for mobile
+
+Goose Clicker is built **mobile-first**. It plays best on a phone or tablet — most of the interactions assume a touchscreen, and several only work there:
+
+- **Touchscreen required for the full experience.** Single taps work on desktop, but tempo, drag-fling, multi-touch easter eggs, and shake gestures are tuned for fingers.
+- **Gyroscope / motion sensor.** Shaking the device feeds the tempo (each shake counts as a virtual tap) and bumps the goose against the screen edges. On iOS Safari you must grant motion permission via the in-game 📳 button on first launch.
+- **Multi-touch.** Several effects react to having more than one finger on screen at once — including a 5-finger easter egg.
+- **Haptics.** Vibration patterns fire on tap, milestone, and explosion where the browser exposes the Vibration API.
+
+Desktop mouse play is supported as a fallback, but you'll be missing shake, multi-touch, and haptics.
+
 ## Features
 
 - **Tempo system** — tap speed builds a 0–100% pressure meter; at 100% the goose explodes
@@ -39,7 +50,9 @@ Or just open `index.html` directly in a browser. No build step required.
 ## Controls
 
 - **Tap / click the goose** to add tempo and score points.
-- **Long-press the title** ("Goose Clicker") to open the credits dialog.
+- **Drag the goose** with your finger to fling it; hard wall hits award bonus points.
+- **Shake the device** to feed tempo and bump the goose against the screen edges (mobile only; iOS asks for motion permission via the 📳 button on first launch).
+- **Long-press the mute button** to open the credits dialog.
 - **EN / RU button** (bottom-right corner) to switch language.
 
 ## Tuning the Explosion
