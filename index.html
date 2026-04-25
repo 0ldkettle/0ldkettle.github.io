@@ -3417,16 +3417,21 @@ document.addEventListener('touchmove', (e) => {
 }, { passive: true });
 
 function spawnNyanCats(points) {
-  // 8-bit nyan-style chiptune: short loop with simple square-wave melody.
+  // 8-bit nyan-style chiptune: looped while at least one cat is on screen.
   // NOT the Momo Momo / daniwell track — our own arrangement to keep this
   // CC-safe on a public Pages deployment.
-  _playNyanChiptune();
   for (const p of points) _spawnOneNyanCat(p.x, p.y);
+  _startNyanChiptuneLoop();
 }
 
 // Cat dimensions (matches the SVG viewBox).
 const NYAN_W = 200, NYAN_H = 72;
 const NYAN_LIFE_MS = 30000; // total on-screen lifetime
+
+// How many nyan cats are currently alive on screen. The chiptune loops as
+// long as this is > 0; goes silent once the last one fades out.
+let _nyanAlive = 0;
+let _nyanLoopRunning = false;
 
 function _spawnOneNyanCat(startX, startY) {
   const wrap = document.createElement('div');
@@ -3457,6 +3462,7 @@ function _spawnOneNyanCat(startX, startY) {
   ].join(';');
   wrap.innerHTML = _nyanSvg();
   stage.appendChild(wrap);
+  _nyanAlive++;
 
   const startT = performance.now();
   let lastT    = startT;
@@ -3490,9 +3496,31 @@ function _spawnOneNyanCat(startX, startY) {
     wrap.style.opacity   = opacity;
 
     if (aliveT < 1) requestAnimationFrame(step);
-    else wrap.remove();
+    else {
+      wrap.remove();
+      _nyanAlive = Math.max(0, _nyanAlive - 1);
+    }
   }
   requestAnimationFrame(step);
+}
+
+// Start the chiptune loop if it's not already running. The loop schedules
+// one melody pass and re-queues itself only while there's still at least
+// one cat alive AND audio isn't muted.
+function _startNyanChiptuneLoop() {
+  if (_nyanLoopRunning) return;
+  _nyanLoopRunning = true;
+  const tick = () => {
+    if (_nyanAlive <= 0 || (state && state.muted)) {
+      _nyanLoopRunning = false;
+      return;
+    }
+    const passDur = _playNyanChiptune();
+    // If audio failed (no AudioContext), bail rather than busy-loop.
+    if (!passDur) { _nyanLoopRunning = false; return; }
+    setTimeout(tick, Math.max(100, passDur * 1000));
+  };
+  tick();
 }
 
 function _nyanSvg() {
@@ -3538,9 +3566,11 @@ function _nyanSvg() {
 function _playNyanChiptune() {
   // Build a short chiptune-style loop with square waves + a low pulse bass.
   // 8-bit “nyan-style” mood, NOT the actual Nyan Cat melody.
+  // Returns the pass duration in seconds, or 0 if audio is unavailable
+  // (so the caller's loop can stop scheduling).
   try {
-    if (!AudioPool || !AudioPool.actx) return;
-    if (state.muted) return;
+    if (!AudioPool || !AudioPool.actx) return 0;
+    if (state.muted) return 0;
     const ctx = AudioPool.actx;
     if (ctx.state === 'suspended') ctx.resume().catch(() => {});
     const now = ctx.currentTime + 0.02;
@@ -3586,7 +3616,8 @@ function _playNyanChiptune() {
       o2.connect(g2).connect(out);
       o2.start(t0); o2.stop(t0 + stepDur);
     }
-  } catch (_) { /* audio unavailable — visual only */ }
+    return lead.length * stepDur;
+  } catch (_) { /* audio unavailable — visual only */ return 0; }
 }
 
 // Suppress context menu and browser gestures
