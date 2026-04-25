@@ -1225,7 +1225,7 @@ const AudioPool = (() => {
     for (let i = 0; i < POP_POOL_SIZE; i++) {
       const a = new Audio('assets/pop.ogg');
       a.preload = 'auto';
-      a.volume  = 0.95;
+      a.volume  = 1.0;
       popHtmlPool.push(a);
     }
     return popHtmlPool;
@@ -1293,11 +1293,24 @@ const AudioPool = (() => {
       src.buffer = popBuffer;
       // Mild pitch jitter so consecutive pops don't sound identical.
       src.playbackRate.value = 0.94 + Math.random() * 0.12;
-      // Slight extra gain — pop is a short transient and reads quieter than the quack.
+      // Pop is a very short transient — push it well above masterGain so it
+      // cuts through the quack/screen-flash. masterGain is 0.85, so a 4.0
+      // boost lands around ~3.4 effective gain. Soft-clip via WaveShaper so
+      // we don't blow the speakers if the user has volume cranked.
       const g = actx.createGain();
-      g.gain.value = 1.15;
+      g.gain.value = 4.0;
+      const shaper = actx.createWaveShaper();
+      // 257-sample tanh curve — transparent up to ~0.7, gentle saturation above.
+      const N = 257;
+      const curve = new Float32Array(N);
+      for (let i = 0; i < N; i++) {
+        const x = (i / (N - 1)) * 2 - 1;
+        curve[i] = Math.tanh(x * 1.6) / Math.tanh(1.6);
+      }
+      shaper.curve = curve;
       src.connect(g);
-      g.connect(masterGain);
+      g.connect(shaper);
+      shaper.connect(masterGain);
       src.start(0);
       return true;
     } catch(_) { return false; }
@@ -1309,6 +1322,7 @@ const AudioPool = (() => {
     popHtmlIdx = (popHtmlIdx + 1) % POP_POOL_SIZE;
     try {
       a.currentTime = 0;
+      a.volume = 1.0;
       a.playbackRate = 0.94 + Math.random() * 0.12;
       a.play().catch(() => {});
     } catch(_) {}
