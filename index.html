@@ -447,7 +447,7 @@ const I18N = {
     shake_enabled: 'Shake to boost the tempo!',
     credits_title: 'About',
     credits_body:
-      'Goose Clicker · build __BUILD__\n\nSound: "Duck Quack" — qubodup\nhttps://freesound.org/s/442820/\nLicense: CC BY 4.0\nRemixed from "20130403_duck.04.wav" — dobroide (CC BY 3.0)\n\nGoose icon: AI-generated',
+      'Goose Clicker · build __BUILD__\n\nQuack sound: "Duck Quack" — qubodup\nhttps://freesound.org/s/442820/\nLicense: CC BY 4.0\nRemixed from "20130403_duck.04.wav" — dobroide (CC BY 3.0)\n\nExplosion sound: "Balloon Pop" — Breviceps\nhttps://freesound.org/s/458398/\nLicense: CC0 (public domain)\n\nGoose icon: AI-generated',
     title_hint: 'long-press title for credits',
     cheat_warning: '✖ CHEATING DETECTED\nThe goose is offended!',
     praises: [
@@ -684,7 +684,7 @@ const I18N = {
     shake_enabled: 'Тряси, чтобы разогнать темп!',
     credits_title: 'О приложении',
     credits_body:
-      'Гусь-Кликер · сборка __BUILD__\n\nЗвук: «Duck Quack» — qubodup\nhttps://freesound.org/s/442820/\nЛицензия: CC BY 4.0\nРемикс звука «20130403_duck.04.wav» — dobroide (CC BY 3.0)\n\nИконка гуся: сгенерирована ИИ',
+      'Гусь-Кликер · сборка __BUILD__\n\nЗвук кряка: «Duck Quack» — qubodup\nhttps://freesound.org/s/442820/\nЛицензия: CC BY 4.0\nРемикс звука «20130403_duck.04.wav» — dobroide (CC BY 3.0)\n\nЗвук взрыва: «Balloon Pop» — Breviceps\nhttps://freesound.org/s/458398/\nЛицензия: CC0 (общественное достояние)\n\nИконка гуся: сгенерирована ИИ',
     title_hint: 'долгий тап — о приложении',
     cheat_warning: '✖ ЧИТЕРСТВО ОБНАРУЖЕНО\nГусь обижен!',
     praises: [
@@ -1192,7 +1192,8 @@ gooseBodyQuack.onload = oneLoaded; gooseBodyQuack.onerror = oneLoaded;
 const AudioPool = (() => {
   const AC = window.AudioContext || window.webkitAudioContext;
   let actx = null;
-  let buffer = null;
+  let buffer = null;     // honk (tap / wall-bump quack)
+  let popBuffer = null;  // balloon-pop (explosion)
   let masterGain = null;
 
   // HTMLAudioElement fallback — created lazily ONLY if Web Audio fails.
@@ -1213,7 +1214,24 @@ const AudioPool = (() => {
     return htmlPool;
   }
 
-  // Load the quack into an AudioBuffer up front.
+  // Smaller HTMLAudio fallback pool for the pop sound — explosions are
+  // far less frequent than taps, so 3 elements are plenty.
+  const POP_POOL_SIZE = 3;
+  let popHtmlPool = null;
+  let popHtmlIdx = 0;
+  function ensurePopHtmlPool() {
+    if (popHtmlPool) return popHtmlPool;
+    popHtmlPool = [];
+    for (let i = 0; i < POP_POOL_SIZE; i++) {
+      const a = new Audio('assets/pop.ogg');
+      a.preload = 'auto';
+      a.volume  = 0.95;
+      popHtmlPool.push(a);
+    }
+    return popHtmlPool;
+  }
+
+  // Load the quack and the pop into AudioBuffers up front.
   if (AC) {
     try {
       actx = new AC();
@@ -1224,6 +1242,11 @@ const AudioPool = (() => {
         .then(r => r.arrayBuffer())
         .then(ab => new Promise((res, rej) => actx.decodeAudioData(ab, res, rej)))
         .then(buf => { buffer = buf; })
+        .catch(() => { /* fall back to HTMLAudio */ });
+      fetch('assets/pop.ogg')
+        .then(r => r.arrayBuffer())
+        .then(ab => new Promise((res, rej) => actx.decodeAudioData(ab, res, rej)))
+        .then(buf => { popBuffer = buf; })
         .catch(() => { /* fall back to HTMLAudio */ });
     } catch(_) { actx = null; }
   }
@@ -1263,10 +1286,42 @@ const AudioPool = (() => {
     } catch(_) {}
   }
 
+  function playPopWebAudio() {
+    if (!actx || !popBuffer) return false;
+    try {
+      const src = actx.createBufferSource();
+      src.buffer = popBuffer;
+      // Mild pitch jitter so consecutive pops don't sound identical.
+      src.playbackRate.value = 0.94 + Math.random() * 0.12;
+      // Slight extra gain — pop is a short transient and reads quieter than the quack.
+      const g = actx.createGain();
+      g.gain.value = 1.15;
+      src.connect(g);
+      g.connect(masterGain);
+      src.start(0);
+      return true;
+    } catch(_) { return false; }
+  }
+
+  function playPopHtmlAudio() {
+    const pool = ensurePopHtmlPool();
+    const a = pool[popHtmlIdx];
+    popHtmlIdx = (popHtmlIdx + 1) % POP_POOL_SIZE;
+    try {
+      a.currentTime = 0;
+      a.playbackRate = 0.94 + Math.random() * 0.12;
+      a.play().catch(() => {});
+    } catch(_) {}
+  }
+
   return {
     play() {
       if (state.muted) return;
       if (!playWebAudio()) playHtmlAudio();
+    },
+    playPop() {
+      if (state.muted) return;
+      if (!playPopWebAudio()) playPopHtmlAudio();
     }
   };
 })();
@@ -3008,6 +3063,7 @@ function triggerExplode() {
   const explX = c0.x + state.gooseSwayX;
   const explY = c0.y + state.gooseDescentY;
   spawnExplode(explX, explY);
+  AudioPool.playPop();
 
   state.pendingScore += EXPLODE_BONUS;
   persist();

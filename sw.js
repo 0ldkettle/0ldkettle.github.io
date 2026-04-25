@@ -4,7 +4,7 @@
 //     when online, with cache fallback for offline use.
 //   - Cache-first for static assets (images, audio, manifest).
 //   - Always-fresh for version.txt so the displayed build hash matches reality.
-const CACHE = 'goose-clicker-v85';
+const CACHE = 'goose-clicker-v86';
 const ASSETS = [
   './',
   './index.html',
@@ -23,6 +23,8 @@ const ASSETS = [
   './assets/goose_body.png',
   './assets/goose_body_quack.png',
   './assets/honk.ogg',
+  './assets/pop.ogg',
+  './assets/pop.mp3',
 ];
 
 self.addEventListener('install', (event) => {
