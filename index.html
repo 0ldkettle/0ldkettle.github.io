@@ -637,6 +637,13 @@ const state = {
   gooseAnimScaleY: 1,
   gooseAnimRotation: 0,
   gooseAnimTranslateY: 0,
+  // Tempo-driven descent toward the spike row. Smoothly lerped each frame
+  // so the goose glides downward as the player heats up, then physically
+  // collides with the spikes at high tempo to trigger the explosion.
+  gooseDescentY: 0,
+  // Nervous left/right sway accumulator while descending.
+  gooseSwayT: 0,
+  gooseSwayX: 0,
   gooseAlpha: 1,
   gooseHidden: false,
   // Respawn pop-in: 0..1 animation progress, 1 = complete
@@ -1310,6 +1317,60 @@ function applyHeat() {
   state.heat = heat;
 }
 
+// Maximum downward offset the goose can reach. Picked so that at full
+// tempo the bottom edge of the (already-shrunken) goose lands exactly on
+// the spike tips at H - SPIKE_HEIGHT. Recomputed each frame because the
+// goose scale, canvas height, and spike height drive it.
+function gooseDescentTarget() {
+  const ratio    = Math.min(1, state.tempo / TEMPO_EXPLODE);
+  const baseY    = gooseCenter().y;
+  const size     = gooseBaseSize();
+  const scaleNow = 1 - ratio * (1 - MIN_SCALE); // matches applyTempoScale
+  // Half the visual silhouette of the goose at the current scale.
+  // SVG mode renders ~0.78 of `size` tall after the 1.30 fit factor;
+  // PNG mode is similar. Use 0.40 as a conservative half-height factor.
+  const halfH    = size * 0.40 * scaleNow;
+  const SPIKE_HEIGHT = 26;
+  // Target Y so that the goose's bottom kisses the spike tips.
+  const targetCenterY = (H - SPIKE_HEIGHT) - halfH;
+  return Math.max(0, targetCenterY - baseY);
+}
+
+// Smoothly drive gooseDescentY toward its target, plus a small nervous
+// horizontal sway whose amplitude scales with tempo.
+function stepGooseDescent(dt) {
+  if (state.exploding || state.gooseHidden) {
+    state.gooseDescentY = 0;
+    state.gooseSwayX    = 0;
+    return;
+  }
+  const target = gooseDescentTarget() * Math.min(1, state.tempo / TEMPO_EXPLODE);
+  // Critically-damped-ish lerp: ~0.35s settling time.
+  const k = 1 - Math.exp(-dt / 0.18);
+  state.gooseDescentY += (target - state.gooseDescentY) * k;
+  // Sway: amplitude grows with tempo; frequency stays comfy ~1.6 Hz.
+  state.gooseSwayT += dt;
+  const ratio = Math.min(1, state.tempo / TEMPO_EXPLODE);
+  const amp   = 14 * ratio;
+  state.gooseSwayX = Math.sin(state.gooseSwayT * 10.0) * amp;
+}
+
+// Returns true when the descended-and-scaled goose silhouette touches the
+// spike row. Used to fire triggerExplode() on physical contact instead of
+// when the tempo bar simply hits 1.0.
+function gooseTouchingSpikes() {
+  if (state.exploding || state.gooseHidden) return false;
+  const SPIKE_HEIGHT = 26;
+  const baseY    = gooseCenter().y;
+  const size     = gooseBaseSize();
+  const scaleNow = state.gooseBaseScale * Math.max(state.gooseAnimScaleY, 0.0001);
+  const halfH    = size * 0.40 * Math.abs(scaleNow);
+  const bottomY  = baseY + state.gooseDescentY + halfH;
+  // 2px contact tolerance — the descent lerp asymptotes near the spike
+  // tips and a strict equality misses the impact frame.
+  return bottomY >= (H - SPIKE_HEIGHT) - 2;
+}
+
 // =============================================================
 // SVG goose — vector rendering ported 1:1 from GooseView.java
 // All paths live in a 300x400 viewBox; drawGoose() wraps this
@@ -1571,7 +1632,10 @@ function drawGoose() {
   const size = gooseBaseSize();
   ctx.save();
   ctx.globalAlpha = state.gooseAlpha;
-  ctx.translate(c.x, c.y + state.gooseAnimTranslateY);
+  ctx.translate(
+    c.x + state.gooseSwayX,
+    c.y + state.gooseAnimTranslateY + state.gooseDescentY
+  );
   ctx.rotate(state.gooseAnimRotation);
   const sx = state.gooseBaseScale * state.gooseAnimScaleX;
   const sy = state.gooseBaseScale * state.gooseAnimScaleY;
@@ -1666,8 +1730,11 @@ function updateGooseAnim(dt) {
 // Respawn pop-in after explosion
 // =============================================================
 function startRespawn() {
-  state.respawnT     = 0;
-  state.gooseHidden  = false;
+  state.respawnT      = 0;
+  state.gooseHidden   = false;
+  state.gooseDescentY = 0;
+  state.gooseSwayX    = 0;
+  state.gooseSwayT    = 0;
 }
 
 // =============================================================
@@ -2310,24 +2377,32 @@ function triggerExplode() {
   state.tempo = 0;
   state.tapTimes.length = 0;
 
-  const c = gooseCenter();
-  spawnExplode(c.x, c.y);
+  // Use the actual descended position so the explosion happens AT the
+  // spike contact point rather than at the resting goose center.
+  const c0    = gooseCenter();
+  const explX = c0.x + state.gooseSwayX;
+  const explY = c0.y + state.gooseDescentY;
+  spawnExplode(explX, explY);
 
   state.pendingScore += EXPLODE_BONUS;
   persist();
-  spawnBonusPoints(c.x, c.y, EXPLODE_BONUS);
+  spawnBonusPoints(explX, explY, EXPLODE_BONUS);
   showBonusBanner(EXPLODE_BONUS);
 
   vibrate([0, 90, 30, 60, 25, 140, 35, 70, 30, 180, 40, 90, 30, 120, 35, 60, 40, 80]);
 
   flashScreen();
 
+  // Reset descent so the deer hatches at the impact point and the next
+  // goose respawn lands back at center.
+  state.gooseDescentY = 0;
+  state.gooseSwayX    = 0;
+
   // Hide goose; spawn deer (which then triggers respawn when it flies off).
   state.gooseHidden = true;
   setTimeout(() => {
-    const cc = gooseCenter();
-    spawnTapFx(cc.x, cc.y);
-    spawnDeer(cc.x, cc.y);
+    spawnTapFx(explX, explY);
+    spawnDeer(explX, explY);
   }, 420);
 }
 
@@ -2540,12 +2615,16 @@ function frame(now) {
     if (tapsPerSec >= TEMPO_GROW_AT)         tempoRate =  TEMPO_GROW_PER_SEC;
     else if (tapsPerSec < TEMPO_DECAY_BELOW) tempoRate = -TEMPO_DECAY_PER_SEC;
     state.tempo = Math.max(0, state.tempo + tempoRate * dt);
-    if (state.tempo >= TEMPO_EXPLODE) {
+    // The tempo bar caps at TEMPO_EXPLODE for visuals, but the actual
+    // explosion is triggered when the descended goose physically meets
+    // the spike row below.
+    if (state.tempo > TEMPO_EXPLODE) state.tempo = TEMPO_EXPLODE;
+    applyTempoScale();
+    applyHeat();
+    stepGooseDescent(dt);
+    updateMotivation();
+    if (gooseTouchingSpikes()) {
       triggerExplode();
-    } else {
-      applyTempoScale();
-      applyHeat();
-      updateMotivation();
     }
   }
 
