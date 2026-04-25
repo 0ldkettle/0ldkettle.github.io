@@ -965,6 +965,12 @@ const state = {
   quackingRequests: 0,
   quackUntil: 0,
   lastMilestoneShown: -1,
+  // Wall-clock time of the most recent praise banner. Used to throttle
+  // praise during big bonus showers (e.g. +10000 from an explosion would
+  // otherwise fire ~100 praises back-to-back). Initialized to -Infinity
+  // so the very first milestone (score=100) always fires, even if the
+  // page has only been alive < PRAISE_MIN_GAP_MS.
+  lastPraiseAt: -Infinity,
   lastMotivationTier: -1,
   lastMotivationIdx: -1,
   // Goose transform — base scale driven by tempo + wobble multipliers
@@ -2685,18 +2691,35 @@ function onGooseTap(x, y) {
   state.lastTapAt = now;
 }
 
+// Minimum wall-clock gap between two praise banners, in ms. Prevents the
+// motivator stack from spam-firing during the +10000 explosion shower
+// (which calls onPointArrived 10000 times across ~1 second of fly-in).
+const PRAISE_MIN_GAP_MS = 1500;
+
 function onPointArrived() {
   state.score++;
   updateScoreText();
   pulseEl(scoreEl, 1.18, 260);
 
-  // Praise banner every 100 points
+  // Praise banner every 100 points — but rate-limited to one per
+  // PRAISE_MIN_GAP_MS so a big bonus (explosion, cube pop) doesn't fire
+  // dozens of overlapping banners.
   if (state.score > 0 && state.score % 100 === 0 && state.score !== state.lastMilestoneShown) {
-    state.lastMilestoneShown = state.score;
-    showPraise();
-    vibrate([0, 80, 60, 80, 60, 150]);
+    const now = performance.now();
+    if (now - state.lastPraiseAt >= PRAISE_MIN_GAP_MS) {
+      state.lastMilestoneShown = state.score;
+      state.lastPraiseAt       = now;
+      showPraise();
+      vibrate([0, 80, 60, 80, 60, 150]);
+    }
+    // If still inside the cooldown, skip this milestone entirely — do
+    // NOT record it as shown, so the next milestone after cooldown will
+    // fire normally.
   }
-  persist();
+  // Throttle persist(): writing localStorage on every one of 10000
+  // bonus points stalls the main thread. Persist on milestones only;
+  // regular taps already persist via their own paths.
+  if (state.score % 25 === 0) persist();
 }
 
 function triggerExplode() {
