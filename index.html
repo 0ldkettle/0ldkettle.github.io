@@ -1421,9 +1421,9 @@ function scareCubes(x, y) {
 const CUBE_POP_BONUS = 100;
 
 // Cube birth animation duration (seconds). During this window the cube
-// scales in from 0 -> 1 with ease-out and a small ripple/sparks burst is
-// drawn at its origin point.
-const CUBE_BIRTH_DUR = 0.45;
+// scales in from 0 -> 1 with ease-out, spins extra, glows brightly and
+// a multi-stage ripple+sparks burst plays at its origin.
+const CUBE_BIRTH_DUR = 0.7;
 
 // Spawn a fresh cube at a random on-screen position with a small
 // pop-in effect (ripple + sparks + scale-in).
@@ -1456,14 +1456,29 @@ function spawnReplacementCube() {
     birthT: 0,
   });
 
-  // Pop-in burst: small ripple + a handful of sparks at the cube's
-  // birth point. Uses the same FX system as taps so it auto-respects
-  // LITE_FX on low-end devices.
-  ripples.push(new Ripple(x, y, 4, Math.max(40, size * 1.6), 0.45));
-  const n = fx(5 + Math.floor(Math.random() * 4));
-  for (let i = 0; i < n; i++) {
-    sparks.push(new Spark(x, y, SPARK_COLORS[Math.floor(Math.random() * SPARK_COLORS.length)], 'contained'));
+  // Pop-in burst — multi-stage so it reads as a real "materialize"
+  // moment instead of a soft fade. Uses the same FX system as taps so
+  // it auto-respects LITE_FX on low-end devices.
+  //
+  // 1) Tight bright ring (the cube "pops" into existence)
+  ripples.push(new Ripple(x, y, 6,  Math.max(60,  size * 2.4), 0.75));
+  // 2) Wider, slower ring trailing behind it
+  ripples.push(new Ripple(x, y, 3,  Math.max(110, size * 4.5), 0.40));
+  // 3) Initial spark shower (radial)
+  const n1 = fx(14 + Math.floor(Math.random() * 6));
+  for (let i = 0; i < n1; i++) {
+    sparks.push(new Spark(x, y, SPARK_COLORS[Math.floor(Math.random() * SPARK_COLORS.length)], true));
   }
+  // 4) Delayed secondary puff to extend the moment a bit
+  setTimeout(() => {
+    ripples.push(new Ripple(x, y, 4, Math.max(80, size * 3.0), 0.45));
+    const n2 = fx(8 + Math.floor(Math.random() * 4));
+    for (let i = 0; i < n2; i++) {
+      const ox = x + (Math.random() - 0.5) * size * 1.6;
+      const oy = y + (Math.random() - 0.5) * size * 1.6;
+      sparks.push(new Spark(ox, oy, SPARK_COLORS[Math.floor(Math.random() * SPARK_COLORS.length)], 'contained'));
+    }
+  }, 140);
 }
 
 // Pop a cube on the spike row: visual burst + +100 score (animated chip).
@@ -1615,28 +1630,48 @@ function drawBackground(dt) {
       c.spinBoost += (Math.random() * 2 - 1) * 1.2;
     }
 
-    // Birth scale: ease-out from 0 to 1 with a small overshoot at the
-    // tail. After CUBE_BIRTH_DUR seconds the cube draws at full size.
-    let birthScale = 1, birthAlpha = 1;
+    // ---- Birth animation envelope -----------------------------------
+    // While c.birthT < CUBE_BIRTH_DUR the cube is treated as "hatching":
+    //   * scale grows 0 -> ~1.4 -> 1.0 (overshoot bounce)
+    //   * extra rotation (one full spin layered onto its normal spin)
+    //   * neon glow / shadowBlur falls off from very strong to none
+    //   * a bright flash overlay covers the cube early on
+    let birthScale = 1, birthAlpha = 1, birthExtraRot = 0,
+        birthGlow  = 0, birthFlash = 0;
     if (c.birthT !== undefined && c.birthT < CUBE_BIRTH_DUR) {
-      const u   = c.birthT / CUBE_BIRTH_DUR;            // 0..1
-      const eo  = 1 - Math.pow(1 - u, 3);                // ease-out cubic
-      birthScale = eo * (1 + 0.18 * Math.sin(u * Math.PI)); // gentle overshoot
-      birthAlpha = Math.min(1, eo * 1.4);
+      const u  = c.birthT / CUBE_BIRTH_DUR;            // 0..1
+      const eo = 1 - Math.pow(1 - u, 3);                // ease-out cubic
+      // Overshoot bounce: peaks at ~1.4 around u=0.55 then settles to 1.
+      birthScale    = eo * (1 + 0.45 * Math.sin(u * Math.PI));
+      birthAlpha    = Math.min(1, eo * 1.6);
+      birthExtraRot = Math.PI * 2 * eo;                 // one full spin during birth
+      birthGlow     = (1 - u) * 28;                     // shadow blur in px
+      birthFlash    = Math.max(0, 1 - u * 2.2);         // bright overlay fades fast
     }
 
     ctx.save();
     ctx.translate(c.x, c.y);
-    ctx.rotate(c.rot);
+    ctx.rotate(c.rot + birthExtraRot);
     if (birthScale !== 1) ctx.scale(birthScale, birthScale);
     if (birthAlpha !== 1) ctx.globalAlpha = birthAlpha;
+    if (birthGlow > 0) {
+      ctx.shadowColor = '#7CF6FF';
+      ctx.shadowBlur  = birthGlow;
+    }
     ctx.fillStyle   = '#2EE6FF';
     ctx.fillRect(-half, -half, c.size, c.size);
     ctx.strokeStyle = '#fff'; ctx.lineWidth = 2;
     ctx.strokeRect(-half, -half, c.size, c.size);
+    ctx.shadowBlur  = 0; // inner highlights shouldn't smear glow
     ctx.fillStyle   = 'rgba(255,255,255,0.4)';
     const inner = c.size * 0.28;
     ctx.fillRect(-inner, -inner, inner * 2, inner * 2);
+    // Bright white flash overlay during the first ~half of birth.
+    if (birthFlash > 0) {
+      ctx.globalAlpha = birthFlash * (birthAlpha || 1);
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(-half, -half, c.size, c.size);
+    }
     ctx.restore();
   }
   if (popped > 0) {
