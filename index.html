@@ -2005,7 +2005,7 @@ function stepGooseBump(dt) {
       // up to the score readout, mirroring tap feedback.
       const cgx = c.x + state.gooseSwayX + state.gooseBumpX;
       const cgy = c.y + state.gooseAnimTranslateY + state.gooseDescentY + state.gooseBumpY;
-      for (let i = 0; i < pts; i++) flyPointBurst(cgx, cgy);
+      for (let i = 0; i < pts; i++) flyPointToScore(cgx, cgy);
     }
   }
   state.bumpFlash = Math.max(0, state.bumpFlash - dt * 3.5);
@@ -2757,47 +2757,6 @@ function flyPointToScore(startX, startY) {
       plus.remove();
       onPointArrived();
     }
-  }
-  requestAnimationFrame(step);
-}
-
-// Wall-hit chip: like flyPointToScore but does NOT travel to the score readout.
-// The chip bursts upward+sideways from the goose, fades out mid-flight, and
-// the point is credited immediately. Avoids the visible "+1 square" landing
-// in the top-left corner of the screen on every wall hit.
-function flyPointBurst(startX, startY) {
-  // Credit the point right away — visual is decoration only.
-  onPointArrived();
-  if (document.querySelectorAll('.fly-plus').length >= MAX_FLY_PLUS) return;
-
-  const plus = document.createElement('div');
-  plus.className = 'fly-plus';
-  plus.innerHTML = `<svg viewBox="0 0 34 34" width="34" height="34" xmlns="http://www.w3.org/2000/svg">
-    <rect x="2" y="2" width="30" height="30" rx="6" fill="#FFD23E" stroke="#fff" stroke-width="2"/>
-    <text x="17" y="24" text-anchor="middle" font-family="Inter, sans-serif" font-weight="900" font-size="20" fill="#2a0f6b">+1</text>
-  </svg>`;
-  stage.appendChild(plus);
-
-  const x0  = startX - 17;
-  const y0  = startY - 17;
-  const ang = -Math.PI / 2 + (Math.random() - 0.5) * 1.1; // mostly upward, ±31°
-  const dist = 110 + Math.random() * 70;
-  const vx  = Math.cos(ang) * dist;
-  const vy  = Math.sin(ang) * dist;
-  const spin = (Math.random() < 0.5 ? -1 : 1) * (360 + Math.random() * 240);
-  const dur  = 620;
-  const startT = performance.now();
-
-  function step(now) {
-    const t = Math.min(1, (now - startT) / dur);
-    const eased = 1 - Math.pow(1 - t, 1.8);
-    const bx = x0 + vx * eased;
-    const by = y0 + vy * eased + 90 * eased * eased; // gravity arc
-    const scale = 0.6 + 0.7 * eased - 0.3 * eased * eased;
-    plus.style.transform = `translate(${bx}px,${by}px) scale(${scale}) rotate(${spin * eased}deg)`;
-    plus.style.opacity = Math.min(1, t * 4) * (1 - Math.pow(t, 2.2));
-    if (t < 1) requestAnimationFrame(step);
-    else plus.remove();
   }
   requestAnimationFrame(step);
 }
