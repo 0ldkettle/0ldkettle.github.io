@@ -1611,7 +1611,15 @@ function popCubeOnSpikes(c) {
 // Draw: GD-style scrolling background
 // =============================================================
 function drawBackground(dt) {
-  state.bgScroll   = (state.bgScroll + dt * (W / 14)) % W;
+  // Advance background scroll. The previous code wrapped state.bgScroll at W
+  // every ~14s, but W is almost never a clean multiple of the grid cell
+  // (36px) or the spike spacing (46px), so wrapping caused a visible jump
+  // about once every 14 seconds when the modulo flipped back to 0. Now we
+  // wrap each layer at its OWN cell size so each layer’s visible pattern
+  // stays perfectly continuous, and we keep state.bgScroll bounded by the
+  // larger of the two so floats don’t drift over a long session.
+  state.bgScroll   += dt * (W / 14);
+  if (state.bgScroll > 1e6) state.bgScroll -= 1e6; // bound but never visible
   state.cubeAngle  += dt * 2.5;
   state.pulsePhase += dt * Math.PI * 2 * 1.6;
 
