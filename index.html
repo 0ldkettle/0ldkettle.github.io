@@ -2425,21 +2425,31 @@ function flyPointToScore(startX, startY) {
 }
 
 function flyBonusCube(startX, startY, value) {
+  // Size scales with digit count so a +10000 bonus cube doesn't crop its text.
+  const label   = '+' + value;
+  const digits  = label.length;
+  const size    = Math.max(40, 18 + digits * 12); // 40 for "+1".."+999", grows for big values
+  const half    = size / 2;
+  const fontPx  = Math.round(size * 0.42);
+  const padding = Math.max(2, Math.round(size * 0.05));
+  const inner   = size - padding * 2;
+  const radius  = Math.round(size * 0.18);
+
   const plus = document.createElement('div');
   plus.className = 'fly-plus';
-  plus.style.width = '40px'; plus.style.height = '40px';
-  plus.innerHTML = `<svg viewBox="0 0 40 40" width="40" height="40" xmlns="http://www.w3.org/2000/svg">
-    <rect x="2" y="2" width="36" height="36" rx="7" fill="#FF3E7F" stroke="#fff" stroke-width="2.5"/>
-    <text x="20" y="28" text-anchor="middle" font-family="Inter, sans-serif" font-weight="900" font-size="20" fill="#fff">+${value}</text>
+  plus.style.width = size + 'px'; plus.style.height = size + 'px';
+  plus.innerHTML = `<svg viewBox="0 0 ${size} ${size}" width="${size}" height="${size}" xmlns="http://www.w3.org/2000/svg">
+    <rect x="${padding}" y="${padding}" width="${inner}" height="${inner}" rx="${radius}" fill="#FF3E7F" stroke="#fff" stroke-width="2.5"/>
+    <text x="${half}" y="${half + fontPx * 0.36}" text-anchor="middle" font-family="Inter, sans-serif" font-weight="900" font-size="${fontPx}" fill="#fff">${label}</text>
   </svg>`;
   stage.appendChild(plus);
 
   const stageRect = stage.getBoundingClientRect();
   const scoreRect = scoreEl.getBoundingClientRect();
-  const x0 = startX - 20;
-  const y0 = startY - 20;
-  const x1 = (scoreRect.left - stageRect.left) + scoreRect.width  / 2 - 20;
-  const y1 = (scoreRect.top  - stageRect.top)  + scoreRect.height / 2 - 20;
+  const x0 = startX - half;
+  const y0 = startY - half;
+  const x1 = (scoreRect.left - stageRect.left) + scoreRect.width  / 2 - half;
+  const y1 = (scoreRect.top  - stageRect.top)  + scoreRect.height / 2 - half;
   const ctrlX = (x0 + x1) / 2 + (Math.random() - 0.5) * 220;
   const ctrlY = Math.min(y0, y1) - 260;
   const spin  = (Math.random() < 0.5 ? -1 : 1) * (720 + Math.random() * 360);
@@ -2456,12 +2466,12 @@ function flyBonusCube(startX, startY, value) {
     plus.style.transform = `translate(${bx}px,${by}px) scale(${scale}) rotate(${spin * eased}deg)`;
     plus.style.opacity   = Math.min(1, t * 5);
     if (!LITE_FX && eased - lastSparkT > 0.05) {
-      spawnSpark(bx + 20, by + 20);
+      spawnSpark(bx + half, by + half);
       lastSparkT = eased;
     }
     if (t < 1) requestAnimationFrame(step);
     else {
-      spawnBurst(x1 + 20, y1 + 20);
+      spawnBurst(x1 + half, y1 + half);
       plus.remove();
       for (let k = 0; k < value; k++) onPointArrived();
     }
@@ -2470,16 +2480,9 @@ function flyBonusCube(startX, startY, value) {
 }
 
 function spawnBonusPoints(cx, cy, count) {
-  const visual    = Math.min(20, count);
-  const perCube   = Math.floor(count / visual);
-  const remainder = count - perCube * visual;
-  for (let i = 0; i < visual; i++) {
-    const delay = i * 40;
-    const jx    = (Math.random() - 0.5) * 120;
-    const jy    = (Math.random() - 0.5) * 80;
-    const value = perCube + (i < remainder ? 1 : 0);
-    setTimeout(() => flyBonusCube(cx + jx, cy + jy, value), delay);
-  }
+  // One single cube carrying the full bonus value flies into the score.
+  // (Was previously a shower of 20 small cubes which felt noisy and spam-y.)
+  flyBonusCube(cx, cy, count);
 }
 
 // =============================================================
