@@ -3126,14 +3126,12 @@ function triggerExplode() {
 // =============================================================
 // Touch / mouse input — broad hit area (full canvas minus HUD)
 //
-// Two interaction modes share the same pointerdown:
-//   - TAP: short contact (< DRAG_HOLD_MS) that doesn't move past
-//     DRAG_MOVE_PX. Fires onGooseTap on release at the original point.
-//   - DRAG: contact on the goose silhouette that exceeds either threshold.
-//     Goose follows the finger; on release it flies off with the finger's
-//     last velocity (clamped to VMAX). A hard fling also feeds tempo as
-//     virtual taps (same path as shake).
-// =============================================================
+// Tap fires immediately on touchdown (so rapid finger drumming registers
+// instantly, like a normal clicker). If the finger then MOVES past
+// DRAG_MOVE_PX while still down on the goose silhouette, we transparently
+// upgrade the contact into a drag — the original tap point still counts,
+// and the drag follows from wherever the finger has wandered.
+// ==============================================================
 function inputToLocal(clientX, clientY) {
   const r = cv.getBoundingClientRect();
   return { x: clientX - r.left, y: clientY - r.top };
@@ -3180,14 +3178,17 @@ function _beginDrag(now) {
 }
 
 function _onPointerDown(id, x, y, clientX, clientY) {
-  // Only one active drag at a time — a second finger is ignored for drag
-  // but still falls through to tap-if-released-quickly logic at the end.
   const now = performance.now();
+  // ALWAYS register a tap immediately. This is what makes finger-drumming
+  // feel responsive and what feeds tempo at human-realistic rates. Drag
+  // upgrades happen later in _onPointerMove without taking this back.
+  onGooseTap(x, y);
+  // Only one active drag-tracker at a time. If a second finger comes down
+  // while the first is still tracked, we still fired its tap above; we just
+  // don't override the in-flight drag-tracker.
   if (_drag) return false;
   // Capture the finger → rendered-goose-center offset NOW, at the very moment
-  // of contact — not later when drag actually starts. The goose is rendered
-  // at gooseCenter + sway + bump (+ anim/descent on Y), and we want the
-  // grabbed point to stay glued to the finger throughout the drag.
+  // of contact, so a future drag preserves the grab point exactly.
   const c   = gooseCenter();
   const cgx = c.x + state.gooseSwayX + state.gooseBumpX;
   const cgy = c.y + state.gooseAnimTranslateY + state.gooseDescentY + state.gooseBumpY;
@@ -3213,7 +3214,10 @@ function _onPointerMove(id, x, y) {
   const dyFromDown = y - _drag.downY;
   const movedFar   = (dxFromDown * dxFromDown + dyFromDown * dyFromDown) >= DRAG_MOVE_PX * DRAG_MOVE_PX;
   const heldLong   = (now - _drag.downAt) >= DRAG_HOLD_MS;
-  if (!_drag.started && _drag.onGoose && (movedFar || heldLong)) {
+  // Drag activates ONLY by movement — holding a finger still without
+  // moving keeps the (already-fired) tap as the only effect. This is the
+  // simplest behavior that makes "tap-and-hold-still" not eat tempo growth.
+  if (!_drag.started && _drag.onGoose && movedFar) {
     _beginDrag(now);
   }
   _drag.lastX = x;
@@ -3241,10 +3245,7 @@ function _onPointerUp(id, x, y) {
   _resetDrag();
   const now = performance.now();
   if (!d.started) {
-    // Treat as a tap at the original press point if it's quick + steady.
-    if (!d.moved && (now - d.downAt) < DRAG_HOLD_MS) {
-      onGooseTap(d.downX, d.downY);
-    }
+    // Tap was already counted on pointerdown; nothing extra to do here.
     return;
   }
   // Fling: derive velocity from the most recent samples.
