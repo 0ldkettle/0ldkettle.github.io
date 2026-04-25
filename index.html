@@ -1992,13 +1992,12 @@ function stepGooseBump(dt) {
         && !state.exploding) {
       state.lastBumpScoreAt = now;
       const pts = (hitSpeed >= BUMP_SCORE_VMAX_BONUS) ? 2 : 1;
-      // Wall-hit scoring is silent visually — no flying +1 chip. The bump
-      // flash + AudioPool.play above already provide feedback, and the
-      // score readout pulses inside onPointArrived. We bypass pendingScore
-      // entirely (taps use pending -> chip arrives -> onPointArrived; we
-      // skip the chip, so we go direct to onPointArrived which increments
-      // state.score and persists).
-      for (let i = 0; i < pts; i++) onPointArrived();
+      state.pendingScore += pts;
+      // Spawn the chip from the goose's current center so the +N flies
+      // up to the score readout, mirroring tap feedback.
+      const cgx = c.x + state.gooseSwayX + state.gooseBumpX;
+      const cgy = c.y + state.gooseAnimTranslateY + state.gooseDescentY + state.gooseBumpY;
+      for (let i = 0; i < pts; i++) flyPointToScore(cgx, cgy);
     }
   }
   state.bumpFlash = Math.max(0, state.bumpFlash - dt * 3.5);
