@@ -1420,19 +1420,30 @@ function scareCubes(x, y) {
 // Bonus awarded when a startled cube lands on the bottom spikes.
 const CUBE_POP_BONUS = 100;
 
-// Spawn a fresh cube at the top edge with a downward drift, replacing
-// one that just popped on the spikes. Keeps the on-screen population stable.
+// Cube birth animation duration (seconds). During this window the cube
+// scales in from 0 -> 1 with ease-out and a small ripple/sparks burst is
+// drawn at its origin point.
+const CUBE_BIRTH_DUR = 0.45;
+
+// Spawn a fresh cube at a random on-screen position with a small
+// pop-in effect (ripple + sparks + scale-in).
 function spawnReplacementCube() {
   if (!state.bgCubes) return;
-  const ang   = (Math.random() * 0.6 - 0.3) + Math.PI / 2; // mostly downward
+  const ang   = Math.random() * Math.PI * 2;
   const speed = 20 + Math.random() * 60;
+  const size  = 18 + Math.random() * 16;
+  const half  = size / 2;
+  // Pick a random position somewhere inside the visible canvas (with a
+  // small margin so the cube isn't half off-screen at birth).
+  const x = half + 6 + Math.random() * Math.max(1, W - size - 12);
+  const y = half + 6 + Math.random() * Math.max(1, H - size - 12);
+
   state.bgCubes.push({
-    x: Math.random() * W,
-    y: -20,
+    x, y,
     vx: Math.cos(ang) * speed,
-    vy: Math.abs(Math.sin(ang) * speed),
+    vy: Math.sin(ang) * speed,
     sx: 0, sy: 0,
-    size: 18 + Math.random() * 16,
+    size,
     rot: Math.random() * Math.PI * 2,
     baseSpin:  (Math.random() < 0.5 ? -1 : 1) * (0.4 + Math.random() * 0.6),
     oscFreq:   0.4 + Math.random() * 0.9,
@@ -1440,7 +1451,19 @@ function spawnReplacementCube() {
     oscAmp:    0.3 + Math.random() * 0.4,
     spinBoost: 0,
     scaredUntil: 0,
+    // Birth-effect age in seconds. While < CUBE_BIRTH_DUR the cube is
+    // drawn with a scale-in transform.
+    birthT: 0,
   });
+
+  // Pop-in burst: small ripple + a handful of sparks at the cube's
+  // birth point. Uses the same FX system as taps so it auto-respects
+  // LITE_FX on low-end devices.
+  ripples.push(new Ripple(x, y, 4, Math.max(40, size * 1.6), 0.45));
+  const n = fx(5 + Math.floor(Math.random() * 4));
+  for (let i = 0; i < n; i++) {
+    sparks.push(new Spark(x, y, SPARK_COLORS[Math.floor(Math.random() * SPARK_COLORS.length)], 'contained'));
+  }
 }
 
 // Pop a cube on the spike row: visual burst + +100 score (animated chip).
@@ -1534,6 +1557,9 @@ function drawBackground(dt) {
   const scareDecay = Math.exp(-dt * 3.2);
   let popped = 0;
   for (const c of state.bgCubes) {
+    // Advance birth-effect age (used for scale-in render below).
+    if (c.birthT !== undefined && c.birthT < CUBE_BIRTH_DUR) c.birthT += dt;
+
     c.x += (c.vx + c.sx) * dt;
     c.y += (c.vy + c.sy) * dt;
     c.sx *= scareDecay;
@@ -1570,7 +1596,10 @@ function drawBackground(dt) {
       const wasScared  = (c.scaredUntil || 0) > tNow;
       const movingDown = (c.vy + c.sy) > 40;
       const onSpikes   = c.y >= (H - SPIKE_HEIGHT - half * 0.4);
-      if (wasScared && movingDown && onSpikes) {
+      // Suppress the spike-pop during the brief birth animation so a
+      // freshly spawned cube can't be killed before its grow-in finishes.
+      const justBorn   = c.birthT !== undefined && c.birthT < CUBE_BIRTH_DUR;
+      if (wasScared && movingDown && onSpikes && !justBorn) {
         c.dead = true;
         popCubeOnSpikes(c);
         popped++;
@@ -1586,9 +1615,21 @@ function drawBackground(dt) {
       c.spinBoost += (Math.random() * 2 - 1) * 1.2;
     }
 
+    // Birth scale: ease-out from 0 to 1 with a small overshoot at the
+    // tail. After CUBE_BIRTH_DUR seconds the cube draws at full size.
+    let birthScale = 1, birthAlpha = 1;
+    if (c.birthT !== undefined && c.birthT < CUBE_BIRTH_DUR) {
+      const u   = c.birthT / CUBE_BIRTH_DUR;            // 0..1
+      const eo  = 1 - Math.pow(1 - u, 3);                // ease-out cubic
+      birthScale = eo * (1 + 0.18 * Math.sin(u * Math.PI)); // gentle overshoot
+      birthAlpha = Math.min(1, eo * 1.4);
+    }
+
     ctx.save();
     ctx.translate(c.x, c.y);
     ctx.rotate(c.rot);
+    if (birthScale !== 1) ctx.scale(birthScale, birthScale);
+    if (birthAlpha !== 1) ctx.globalAlpha = birthAlpha;
     ctx.fillStyle   = '#2EE6FF';
     ctx.fillRect(-half, -half, c.size, c.size);
     ctx.strokeStyle = '#fff'; ctx.lineWidth = 2;
