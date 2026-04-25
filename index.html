@@ -1481,22 +1481,41 @@ function drawBackground(dt) {
 
   // Floating rotating cyan cubes drifting freely across the whole stage.
   // Each cube has its own velocity and spin; they wrap around the edges.
-  // Cubes start empty — they only appear (1/sec) while the player is
-  // actively growing tempo, and they are NOT refilled when one pops on
-  // the spikes.
+  // 10 cubes start drifting at game start; after that, more only appear
+  // while the player is actively growing tempo (one every 0.3s), and
+  // popped cubes are NOT refilled.
   if (!state.bgCubes) {
     state.bgCubes  = [];
     state.bgCubesT = 0;
     state.cubeSpawnT = 0;
+    for (let i = 0; i < 10; i++) {
+      const ang = Math.random() * Math.PI * 2;
+      const speed = 20 + Math.random() * 60; // 20..80 px/s
+      state.bgCubes.push({
+        x: Math.random() * W,
+        y: Math.random() * H,
+        vx: Math.cos(ang) * speed,
+        vy: Math.sin(ang) * speed,
+        sx: 0, sy: 0,
+        size: 18 + Math.random() * 16,
+        rot: Math.random() * Math.PI * 2,
+        baseSpin:  (Math.random() < 0.5 ? -1 : 1) * (0.4 + Math.random() * 0.6),
+        oscFreq:   0.4 + Math.random() * 0.9,
+        oscPhase:  Math.random() * Math.PI * 2,
+        oscAmp:    0.3 + Math.random() * 0.4,
+        spinBoost: 0,
+        scaredUntil: 0,
+      });
+    }
   }
   state.bgCubesT += dt;
 
-  // Spawn cadence: one new cube per second of accumulated growing-tempo
+  // Spawn cadence: one new cube every 0.3s of accumulated growing-tempo
   // time. We only advance the timer while state.tempoGrowing is true, so
   // pauses or decay don't "queue up" cubes. Cap the on-screen population
   // so a long sustained burst can't flood the canvas.
-  const CUBE_SPAWN_INTERVAL = 1.0;
-  const CUBE_MAX = 30;
+  const CUBE_SPAWN_INTERVAL = 0.3;
+  const CUBE_MAX = 100;
   if (state.tempoGrowing && state.bgCubes.length < CUBE_MAX) {
     state.cubeSpawnT += dt;
     while (state.cubeSpawnT >= CUBE_SPAWN_INTERVAL && state.bgCubes.length < CUBE_MAX) {
