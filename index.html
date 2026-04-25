@@ -436,8 +436,8 @@
 const I18N = {
   en: {
     app_name: 'Goose Clicker',
-    score_fmt: (n) => `Score: ${n}`,
-    explode_count_fmt: (n) => `Explosions: ${n}`,
+    score_fmt: (n) => `Score: ${fmtNum(n)}`,
+    explode_count_fmt: (n) => `Explosions: ${fmtNum(n)}`,
     credits_title: 'About',
     credits_body:
       'Goose Clicker · build __BUILD__\n\nSound: "Duck Quack" — qubodup\nhttps://freesound.org/s/442820/\nLicense: CC BY 4.0\nRemixed from "20130403_duck.04.wav" — dobroide (CC BY 3.0)\n\nGoose icon: AI-generated',
@@ -669,8 +669,8 @@ const I18N = {
   },
   ru: {
     app_name: 'Гусь-Кликер',
-    score_fmt: (n) => `Счёт: ${n}`,
-    explode_count_fmt: (n) => `Взрывов: ${n}`,
+    score_fmt: (n) => `Счёт: ${fmtNum(n)}`,
+    explode_count_fmt: (n) => `Взрывов: ${fmtNum(n)}`,
     credits_title: 'О приложении',
     credits_body:
       'Гусь-Кликер · сборка __BUILD__\n\nЗвук: «Duck Quack» — qubodup\nhttps://freesound.org/s/442820/\nЛицензия: CC BY 4.0\nРемикс звука «20130403_duck.04.wav» — dobroide (CC BY 3.0)\n\nИконка гуся: сгенерирована ИИ',
@@ -913,6 +913,29 @@ function t(key) {
   const locale = I18N[currentLang] || I18N.en;
   return locale[key] !== undefined ? locale[key] : (I18N.en[key] || key);
 }
+
+// Locale tag passed to Intl.NumberFormat. EN -> en-US ("1,234,567"),
+// RU -> ru-RU ("1\u00a0234\u00a0567").
+function localeTag() {
+  return currentLang === 'ru' ? 'ru-RU' : 'en-US';
+}
+
+// Cached formatter, rebuilt whenever the language changes (see setLang).
+let _numFmt = null;
+function fmtNum(n) {
+  if (typeof n !== 'number' || !isFinite(n)) n = Number(n) || 0;
+  try {
+    if (!_numFmt) _numFmt = new Intl.NumberFormat(localeTag());
+    return _numFmt.format(n);
+  } catch {
+    // Fallback for ancient runtimes: manual thousand separator.
+    const sep = currentLang === 'ru' ? '\u00a0' : ',';
+    const sign = n < 0 ? '-' : '';
+    return sign + Math.abs(Math.trunc(n)).toString()
+      .replace(/\B(?=(\d{3})+(?!\d))/g, sep);
+  }
+}
+function _resetNumFmt() { _numFmt = null; }
 
 // =============================================================
 // Gameplay mechanics constants
@@ -2522,7 +2545,7 @@ function flyPointToScore(startX, startY) {
 
 function flyBonusCube(startX, startY, value) {
   // Size scales with digit count so a +10000 bonus cube doesn't crop its text.
-  const label   = '+' + value;
+  const label   = '+' + fmtNum(value);
   const digits  = label.length;
   const size    = Math.max(40, 18 + digits * 12); // 40 for "+1".."+999", grows for big values
   const half    = size / 2;
@@ -2619,7 +2642,7 @@ function showPraise() {
 }
 
 function showBonusBanner(bonus) {
-  showBanner(`+${bonus}!`, 'bonus-banner', 650);
+  showBanner(`+${fmtNum(bonus)}!`, 'bonus-banner', 650);
 }
 
 function showCheatWarning() {
@@ -2979,6 +3002,7 @@ const langBtn = document.getElementById('langBtn');
 
 function applyLanguage(lang) {
   currentLang = lang;
+  _resetNumFmt();
   Store.set('lang', lang);
   langBtn.textContent = lang.toUpperCase();
   document.documentElement.lang = lang;
@@ -3044,7 +3068,7 @@ if (tapRateEl) {
     maxTps = 0;
     Store.set('goose_max_tps', '0');
     if (tapRateEl) {
-      tapRateEl.textContent = '0 / 0 tps';
+      tapRateEl.textContent = fmtNum(0) + ' / ' + fmtNum(0) + ' tps';
       // brief flash so the user sees the reset
       tapRateEl.classList.add('hot');
       setTimeout(() => { tapRateEl.classList.remove('hot'); }, 200);
@@ -3091,7 +3115,7 @@ function frame(now) {
     }
     // Update the on-screen rate meter: current / max.
     if (tapRateEl) {
-      tapRateEl.textContent = tapsPerSec + ' / ' + maxTps + ' tps';
+      tapRateEl.textContent = fmtNum(tapsPerSec) + ' / ' + fmtNum(maxTps) + ' tps';
       tapRateEl.classList.toggle('hot', tapsPerSec >= 28);
     }
     let tempoRate = 0;
