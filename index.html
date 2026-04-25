@@ -1339,7 +1339,12 @@ const AudioPool = (() => {
     playPop() {
       if (state.muted) return;
       if (!playPopWebAudio()) playPopHtmlAudio();
-    }
+    },
+    // Direct AudioContext access for ad-hoc procedural sounds (e.g.
+    // the nyan-cat easter-egg chiptune). Returns nulls when Web Audio
+    // is unavailable so callers can no-op gracefully.
+    get actx()       { return actx; },
+    get masterGain() { return masterGain; },
   };
 })();
 
@@ -3342,6 +3347,222 @@ window.addEventListener('mouseup', (e) => {
   const p = inputToLocal(e.clientX, e.clientY);
   _onPointerUp(_MOUSE_ID, p.x, p.y);
 });
+
+// =============================================================
+// Easter egg: hold 5 fingers for 10 seconds → nyan cats fly out
+// from each finger position. Triggers once per multi-touch session;
+// lifting any finger resets, reaching 5 again starts a new countdown.
+// =============================================================
+const NYAN_FINGERS_REQUIRED = 5;
+const NYAN_HOLD_MS          = 10000;
+const _nyanTouches = new Map(); // pointerId → { x, y, clientX, clientY }
+let   _nyanArmedAt = 0;         // performance.now() when 5th finger landed
+let   _nyanFiredThisSession = false;
+
+function _nyanReset() {
+  _nyanArmedAt = 0;
+  _nyanFiredThisSession = false;
+}
+function _nyanCheckArm() {
+  if (_nyanFiredThisSession) return;
+  if (_nyanTouches.size === NYAN_FINGERS_REQUIRED) {
+    if (_nyanArmedAt === 0) _nyanArmedAt = performance.now();
+  } else {
+    _nyanArmedAt = 0;
+  }
+}
+function _nyanTick() {
+  if (!_nyanFiredThisSession
+      && _nyanArmedAt > 0
+      && _nyanTouches.size === NYAN_FINGERS_REQUIRED
+      && (performance.now() - _nyanArmedAt) >= NYAN_HOLD_MS) {
+    _nyanFiredThisSession = true;
+    const stageRect = stage.getBoundingClientRect();
+    const points = [];
+    for (const t of _nyanTouches.values()) {
+      points.push({
+        x: t.clientX - stageRect.left,
+        y: t.clientY - stageRect.top,
+      });
+    }
+    spawnNyanCats(points);
+  }
+  requestAnimationFrame(_nyanTick);
+}
+requestAnimationFrame(_nyanTick);
+
+// Listen on document so we catch fingers anywhere on the page (HUD, sides),
+// and use a SEPARATE handler set so we don't disturb the goose tap pipeline.
+document.addEventListener('touchstart', (e) => {
+  for (const t of e.changedTouches) {
+    _nyanTouches.set(t.identifier, { clientX: t.clientX, clientY: t.clientY });
+  }
+  _nyanCheckArm();
+}, { passive: true });
+function _nyanTouchEnd(e) {
+  for (const t of e.changedTouches) {
+    _nyanTouches.delete(t.identifier);
+  }
+  // Releasing any finger resets the session entirely (per spec).
+  _nyanReset();
+}
+document.addEventListener('touchend',    _nyanTouchEnd, { passive: true });
+document.addEventListener('touchcancel', _nyanTouchEnd, { passive: true });
+document.addEventListener('touchmove', (e) => {
+  for (const t of e.changedTouches) {
+    if (_nyanTouches.has(t.identifier)) {
+      _nyanTouches.set(t.identifier, { clientX: t.clientX, clientY: t.clientY });
+    }
+  }
+}, { passive: true });
+
+function spawnNyanCats(points) {
+  // 8-bit nyan-style chiptune: short loop with simple square-wave melody.
+  // NOT the Momo Momo / daniwell track — our own arrangement to keep this
+  // CC-safe on a public Pages deployment.
+  _playNyanChiptune();
+  for (const p of points) _spawnOneNyanCat(p.x, p.y);
+}
+
+function _spawnOneNyanCat(startX, startY) {
+  const stageRect = stage.getBoundingClientRect();
+  const W = stageRect.width;
+  // Random horizontal direction; if too close to an edge, force away from it.
+  let dir = (Math.random() < 0.5) ? -1 : 1;
+  if (startX < W * 0.2) dir = 1;
+  else if (startX > W * 0.8) dir = -1;
+  const travel = W + 360; // off-screen on the far side
+
+  const wrap = document.createElement('div');
+  wrap.className = 'nyan-cat';
+  // Inline styles — keeps the change scoped to this feature, no CSS edits.
+  wrap.style.cssText = [
+    'position:absolute',
+    'left:0', 'top:0',
+    'pointer-events:none',
+    'will-change:transform,opacity',
+    'z-index:9',
+    'transform:translate(' + (startX - 100) + 'px,' + (startY - 36) + 'px) scaleX(' + dir + ')',
+    'opacity:0',
+  ].join(';');
+  wrap.innerHTML = _nyanSvg();
+  stage.appendChild(wrap);
+
+  const dur     = 2200 + Math.random() * 600;
+  const startT  = performance.now();
+  const x0      = startX - 100;
+  const y0      = startY - 36;
+  const wave    = 22 + Math.random() * 18; // vertical wobble amplitude
+  const wfreq   = 2 + Math.random() * 1.5; // wobble cycles over the flight
+
+  function step(now) {
+    const t = Math.min(1, (now - startT) / dur);
+    const x = x0 + dir * travel * t;
+    const y = y0 + Math.sin(t * Math.PI * wfreq) * wave;
+    const opacity = (t < 0.08) ? (t / 0.08)
+                  : (t > 0.92) ? ((1 - t) / 0.08)
+                  : 1;
+    wrap.style.transform = 'translate(' + x + 'px,' + y + 'px) scaleX(' + dir + ')';
+    wrap.style.opacity   = opacity;
+    if (t < 1) requestAnimationFrame(step);
+    else wrap.remove();
+  }
+  requestAnimationFrame(step);
+}
+
+function _nyanSvg() {
+  // 200×72 viewBox: pop-tart body on the left + cat head on the right + rainbow trail behind.
+  return ''
+    + '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 72" width="200" height="72">'
+    +   '<g shape-rendering="crispEdges">'
+    // Rainbow trail (6 stripes) trailing behind the body, ending at body left edge.
+    +     '<rect x="0"  y="24" width="96" height="4" fill="#ff3b3b"/>'
+    +     '<rect x="0"  y="28" width="96" height="4" fill="#ff9326"/>'
+    +     '<rect x="0"  y="32" width="96" height="4" fill="#ffd23e"/>'
+    +     '<rect x="0"  y="36" width="96" height="4" fill="#3ee06b"/>'
+    +     '<rect x="0"  y="40" width="96" height="4" fill="#3eb6ff"/>'
+    +     '<rect x="0"  y="44" width="96" height="4" fill="#a855f7"/>'
+    // Pop-tart body (pink frosting, brown crust outline, sprinkles).
+    +     '<rect x="96"  y="18" width="60" height="40" fill="#7a4a2e"/>'
+    +     '<rect x="100" y="22" width="52" height="32" fill="#ff8eb3"/>'
+    +     '<rect x="106" y="26" width="4"  height="4"  fill="#ffd23e"/>'
+    +     '<rect x="118" y="32" width="4"  height="4"  fill="#3eb6ff"/>'
+    +     '<rect x="130" y="28" width="4"  height="4"  fill="#3ee06b"/>'
+    +     '<rect x="140" y="36" width="4"  height="4"  fill="#ff3b3b"/>'
+    +     '<rect x="112" y="42" width="4"  height="4"  fill="#a855f7"/>'
+    +     '<rect x="126" y="44" width="4"  height="4"  fill="#ffd23e"/>'
+    // Cat head emerging from the right side of the pop-tart.
+    +     '<rect x="152" y="14" width="36" height="40" fill="#cccccc"/>'
+    // Ears
+    +     '<rect x="152" y="6"  width="8"  height="8"  fill="#cccccc"/>'
+    +     '<rect x="180" y="6"  width="8"  height="8"  fill="#cccccc"/>'
+    // Eyes
+    +     '<rect x="160" y="24" width="6"  height="6"  fill="#000"/>'
+    +     '<rect x="176" y="24" width="6"  height="6"  fill="#000"/>'
+    // Cheeks
+    +     '<rect x="156" y="36" width="6"  height="4"  fill="#ff8eb3"/>'
+    +     '<rect x="180" y="36" width="6"  height="4"  fill="#ff8eb3"/>'
+    // Mouth
+    +     '<rect x="166" y="40" width="10" height="2"  fill="#000"/>'
+    +     '<rect x="164" y="38" width="2"  height="2"  fill="#000"/>'
+    +     '<rect x="176" y="38" width="2"  height="2"  fill="#000"/>'
+    +   '</g>'
+    + '</svg>';
+}
+
+function _playNyanChiptune() {
+  // Build a short chiptune-style loop with square waves + a low pulse bass.
+  // 8-bit “nyan-style” mood, NOT the actual Nyan Cat melody.
+  try {
+    if (!AudioPool || !AudioPool.actx) return;
+    if (state.muted) return;
+    const ctx = AudioPool.actx;
+    if (ctx.state === 'suspended') ctx.resume().catch(() => {});
+    const now = ctx.currentTime + 0.02;
+    // Notes (C major / A minor pentatonic-ish), 16 steps, 0.12s each → ~1.92s.
+    // Hz values for a cheerful 8-bit run.
+    const lead = [
+      784, 988, 1175, 988, 1318, 988, 1175, 988,
+      784, 880, 1046, 880, 1175, 1046, 988, 784
+    ];
+    const bass = [
+      196, 196, 261, 261, 196, 196, 220, 220,
+      196, 196, 261, 261, 196, 196, 174, 174
+    ];
+    const stepDur = 0.12;
+    const out = ctx.createGain();
+    out.gain.value = 0.0;
+    out.gain.setValueAtTime(0.0, now);
+    out.gain.linearRampToValueAtTime(0.18, now + 0.05);
+    out.gain.linearRampToValueAtTime(0.0, now + lead.length * stepDur + 0.1);
+    out.connect(AudioPool.masterGain || ctx.destination);
+    for (let i = 0; i < lead.length; i++) {
+      const t0 = now + i * stepDur;
+      // Lead square
+      const o1 = ctx.createOscillator();
+      o1.type = 'square';
+      o1.frequency.value = lead[i];
+      const g1 = ctx.createGain();
+      g1.gain.value = 0;
+      g1.gain.setValueAtTime(0, t0);
+      g1.gain.linearRampToValueAtTime(0.55, t0 + 0.01);
+      g1.gain.linearRampToValueAtTime(0.0,  t0 + stepDur * 0.95);
+      o1.connect(g1).connect(out);
+      o1.start(t0); o1.stop(t0 + stepDur);
+      // Bass triangle
+      const o2 = ctx.createOscillator();
+      o2.type = 'triangle';
+      o2.frequency.value = bass[i];
+      const g2 = ctx.createGain();
+      g2.gain.value = 0;
+      g2.gain.setValueAtTime(0, t0);
+      g2.gain.linearRampToValueAtTime(0.40, t0 + 0.01);
+      g2.gain.linearRampToValueAtTime(0.0,  t0 + stepDur * 0.95);
+      o2.connect(g2).connect(out);
+      o2.start(t0); o2.stop(t0 + stepDur);
+    }
+  } catch (_) { /* audio unavailable — visual only */ }
+}
 
 // Suppress context menu and browser gestures
 cv.addEventListener('contextmenu', (e) => e.preventDefault());
