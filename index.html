@@ -1827,41 +1827,10 @@ const BUMP_RESTITUTION       = 0.55;   // bounciness on wall hit
 const BUMP_MIN_SPEED_FOR_FX  = 80;     // px/sec; below this no sound on wall hit
 const BUMP_SOUND_COOLDOWN_MS = 90;     // anti-spam between bonk sounds
 
-// Synthesize a short low-pitched 'bonk' via Web Audio. Reuses the AudioPool
-// AudioContext if available; falls back to silence on browsers without WA.
-function playBonk(intensity) {
-  if (state.muted) return;
-  const actx = (typeof AudioPool !== 'undefined' && AudioPool.ctx) || null;
-  // Try to reuse the same context the quack uses; fall back to a fresh one.
-  const C = actx || (window._bonkCtx || (window._bonkCtx = (function(){
-    const AC = window.AudioContext || window.webkitAudioContext;
-    return AC ? new AC() : null;
-  })()));
-  if (!C) return;
-  try {
-    if (C.state === 'suspended') C.resume();
-    const t0 = C.currentTime;
-    // Punchy thud: low sine + click via short noise burst.
-    const osc = C.createOscillator();
-    const og  = C.createGain();
-    const vol = Math.min(1, 0.18 + intensity * 0.55);
-    osc.type = 'sine';
-    osc.frequency.setValueAtTime(160, t0);
-    osc.frequency.exponentialRampToValueAtTime(70, t0 + 0.08);
-    og.gain.setValueAtTime(vol, t0);
-    og.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.18);
-    osc.connect(og); og.connect(C.destination);
-    osc.start(t0); osc.stop(t0 + 0.20);
-    // Click transient
-    const noiseLen = 0.025;
-    const buf = C.createBuffer(1, Math.ceil(C.sampleRate * noiseLen), C.sampleRate);
-    const d = buf.getChannelData(0);
-    for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / d.length);
-    const ns = C.createBufferSource(); ns.buffer = buf;
-    const ng = C.createGain(); ng.gain.value = Math.min(0.5, 0.12 + intensity * 0.4);
-    ns.connect(ng); ng.connect(C.destination);
-    ns.start(t0);
-  } catch(_) {}
+// Wall-hit sound: same quack used by taps so the audio palette stays
+// consistent. AudioPool already handles muting, pitch jitter and pooling.
+function playBonk(_intensity) {
+  AudioPool.play();
 }
 
 // Apply an instantaneous velocity kick to the goose. Called from the
@@ -1936,7 +1905,7 @@ function stepGooseBump(dt) {
       && now - state.lastBumpAt > BUMP_SOUND_COOLDOWN_MS) {
     state.lastBumpAt = now;
     const intensity = Math.min(1, hitSpeed / 900);
-    playBonk(intensity);
+    AudioPool.play();
     vibrate(Math.round(15 + intensity * 35));
     state.bumpFlash = Math.min(1, 0.4 + intensity * 0.6);
   }
