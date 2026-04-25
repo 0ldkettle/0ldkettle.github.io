@@ -1,6 +1,6 @@
 # Goose Clicker
 
-A frenetic tap-the-goose browser game. Each tap builds tempo, the goose shrinks under pressure, and when the tension reaches critical mass — **BOOM**. The goose explodes in a shower of feathers and sparks, awarding a 500-point bonus, then respawns ready for another round.
+A frenetic tap-the-goose browser game. Each tap builds tempo, the goose shrinks under pressure, and when the tension reaches critical mass — **BOOM**. The goose explodes in a shower of feathers and sparks, awarding a 10,000-point bonus, then respawns ready for another round.
 
 The further you push, the smaller the goose gets, the redder the screen glows, and the louder the crowd (of one goose) cheers. Beat-driven motivational messages escalate from gentle encouragement to full alarm mode. Every 100 points earns a praise banner. The goose will also get sad if you ignore it for too long.
 
@@ -11,7 +11,7 @@ The further you push, the smaller the goose gets, the redder the screen glows, a
 ## Features
 
 - **Tempo system** — tap speed builds a 0–100% pressure meter; at 100% the goose explodes
-- **Explosion & respawn** — satisfying particle burst + feather shower + screen flash; +500 bonus points
+- **Explosion & respawn** — satisfying particle burst + feather shower + screen flash; +10,000 bonus points
 - **Anti-cheat v5.1** — five detection signatures (interval CV, spread, spatial clustering, rolling window) penalise bot-like input with a score deduction and a 3-second cooldown
 - **Particles** — sparks, feathers, and ripple rings; secondary and tertiary bursts on explosion
 - **Heat background** — red-alert overlay intensifies as tempo climbs; pulsing vignette at critical level
