@@ -2016,6 +2016,17 @@ function stepGooseBump(dt) {
       const cgx = c.x + state.gooseSwayX + state.gooseBumpX;
       const cgy = c.y + state.gooseAnimTranslateY + state.gooseDescentY + state.gooseBumpY;
       for (let i = 0; i < pts; i++) flyPointToScore(cgx, cgy);
+      // Open the beak just like a tap does — the wall-hit scoring should
+      // look the same as scoring from a tap, not just sound the same.
+      state.quackingRequests++;
+      state.quack = true;
+      setTimeout(() => {
+        state.quackingRequests--;
+        if (state.quackingRequests <= 0) {
+          state.quackingRequests = 0;
+          state.quack = false;
+        }
+      }, 220);
     }
   }
   state.bumpFlash = Math.max(0, state.bumpFlash - dt * 3.5);
