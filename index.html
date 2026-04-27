@@ -1016,6 +1016,11 @@ const state = {
   gooseAnimScaleX: 1,
   gooseAnimScaleY: 1,
   gooseAnimRotation: 0,
+  // Two-finger user twist gesture: persistent rotation accumulator (radians)
+  // and temporary pinch-zoom scale that springs back to 1 when fingers lift.
+  userRotate: 0,
+  userPinchScale: 1,
+  userPinchTargetScale: 1,
   gooseAnimTranslateY: 0,
   // Tempo-driven descent toward the spike row. Smoothly lerped each frame
   // so the goose glides downward as the player heats up, then physically
@@ -2320,9 +2325,9 @@ function drawGoose() {
     c.x + state.gooseSwayX + state.gooseBumpX,
     c.y + state.gooseAnimTranslateY + state.gooseDescentY + state.gooseBumpY
   );
-  ctx.rotate(state.gooseAnimRotation);
-  const sx = state.gooseBaseScale * state.gooseAnimScaleX;
-  const sy = state.gooseBaseScale * state.gooseAnimScaleY;
+  ctx.rotate(state.gooseAnimRotation + state.userRotate);
+  const sx = state.gooseBaseScale * state.gooseAnimScaleX * state.userPinchScale;
+  const sy = state.gooseBaseScale * state.gooseAnimScaleY * state.userPinchScale;
   ctx.scale(sx, sy);
   const drawW = size, drawH = size;
 
@@ -2377,6 +2382,16 @@ function animateGoose() {
 }
 
 function updateGooseAnim(dt) {
+  // Spring userPinchScale toward its target (1.0 when fingers are off, or
+  // the live value during a two-finger twist gesture). Critically damped feel.
+  {
+    const k = 14;
+    const a = 1 - Math.exp(-k * dt);
+    state.userPinchScale += (state.userPinchTargetScale - state.userPinchScale) * a;
+    if (Math.abs(state.userPinchScale - state.userPinchTargetScale) < 0.002) {
+      state.userPinchScale = state.userPinchTargetScale;
+    }
+  }
   const aq = state.animQueue;
   if (!aq) {
     state.gooseAnimScaleX     = 1;
@@ -3230,6 +3245,11 @@ function _onPointerDown(id, x, y, clientX, clientY) {
 
 function _onPointerMove(id, x, y) {
   if (!_drag || _drag.id !== id) return;
+  // While a two-finger twist gesture is active, freeze single-finger drag.
+  if (typeof _twist !== 'undefined' && _twist) {
+    _drag.started = false;
+    return;
+  }
   const now = performance.now();
   const dxFromDown = x - _drag.downX;
   const dyFromDown = y - _drag.downY;
@@ -3347,6 +3367,102 @@ window.addEventListener('mouseup', (e) => {
   const p = inputToLocal(e.clientX, e.clientY);
   _onPointerUp(_MOUSE_ID, p.x, p.y);
 });
+
+// =============================================================
+// Two-finger twist gesture: rotate (and temporarily pinch-zoom) the goose.
+//   - Activates when EXACTLY 2 fingers are down AND BOTH are inside the
+//     goose hit ellipse at touchstart.
+//   - While active: userRotate accumulates from baseline + (curAngle - startAngle).
+//     userPinchTargetScale tracks (curDist / startDist), clamped 0.5..2.5.
+//   - On release: rotation persists (final angle stays). Pinch scale eases
+//     back to 1 via the spring in updateGooseAnim().
+//   - Visual only — explosion / scoring / wall physics use unrotated coords.
+//   - Suppresses the existing single-finger drag for the duration of the twist
+//     so the goose doesn't try to chase one finger while we're rotating.
+// =============================================================
+const _twistTouches = new Map(); // identifier → { x, y } in local stage coords
+let _twist = null;
+// Clamp a rotation delta to a sane range so a runaway gesture doesn't
+// produce thousand-radian totals.
+const USER_PINCH_MIN = 0.5;
+const USER_PINCH_MAX = 2.5;
+
+function _twistTryStart() {
+  if (_twist) return;
+  if (_twistTouches.size !== 2) return;
+  const pts = [..._twistTouches.values()];
+  const a = pts[0], b = pts[1];
+  // Both fingers must land on the goose for the gesture to engage.
+  if (!_gooseEllipseHit(a.x, a.y) || !_gooseEllipseHit(b.x, b.y)) return;
+  const dx = b.x - a.x, dy = b.y - a.y;
+  const dist = Math.hypot(dx, dy) || 1;
+  _twist = {
+    startAngle:  Math.atan2(dy, dx),
+    startDist:   dist,
+    baseRotate:  state.userRotate,
+    // Pause the single-finger drag so the goose doesn't follow one finger
+    // while we're spinning it.
+    suppressedDrag: !!_drag,
+  };
+  if (_drag) _drag.started = false;
+}
+
+function _twistUpdate() {
+  if (!_twist || _twistTouches.size !== 2) return;
+  const pts = [..._twistTouches.values()];
+  const a = pts[0], b = pts[1];
+  const dx = b.x - a.x, dy = b.y - a.y;
+  const dist = Math.hypot(dx, dy) || 1;
+  const ang  = Math.atan2(dy, dx);
+  state.userRotate = _twist.baseRotate + (ang - _twist.startAngle);
+  let s = dist / _twist.startDist;
+  if (s < USER_PINCH_MIN) s = USER_PINCH_MIN;
+  else if (s > USER_PINCH_MAX) s = USER_PINCH_MAX;
+  state.userPinchTargetScale = s;
+}
+
+function _twistEnd() {
+  if (!_twist) return;
+  _twist = null;
+  // Spring pinch back to 1; rotation persists.
+  state.userPinchTargetScale = 1;
+}
+
+// Listen on the canvas with capture so we see the touches before the
+// existing single-finger drag handler decides what to do.
+cv.addEventListener('touchstart', (e) => {
+  for (const t of e.changedTouches) {
+    const p = inputToLocal(t.clientX, t.clientY);
+    _twistTouches.set(t.identifier, { x: p.x, y: p.y });
+  }
+  _twistTryStart();
+}, { passive: false, capture: true });
+
+cv.addEventListener('touchmove', (e) => {
+  for (const t of e.changedTouches) {
+    if (_twistTouches.has(t.identifier)) {
+      const p = inputToLocal(t.clientX, t.clientY);
+      _twistTouches.set(t.identifier, { x: p.x, y: p.y });
+    }
+  }
+  if (_twist) {
+    // Stop the page from scrolling AND stop the drag handler from
+    // hauling the goose around while we twist.
+    e.preventDefault();
+    _twistUpdate();
+  }
+}, { passive: false, capture: true });
+
+function _twistTouchEnd(e) {
+  for (const t of e.changedTouches) {
+    _twistTouches.delete(t.identifier);
+  }
+  if (_twist && _twistTouches.size < 2) {
+    _twistEnd();
+  }
+}
+cv.addEventListener('touchend',    _twistTouchEnd, { capture: true });
+cv.addEventListener('touchcancel', _twistTouchEnd, { capture: true });
 
 // =============================================================
 // Easter egg: hold 5 fingers for 10 seconds → nyan cats fly out
